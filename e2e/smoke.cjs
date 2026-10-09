@@ -2,7 +2,9 @@
 //   BASE_URL=http://localhost:4200 CHROME_PATH=... SHOTS_DIR=... npm run e2e:smoke
 // The run signs in ~15 times within a minute; start the API under test with LOGIN_RATE_LIMIT_PER_MINUTE=100
 // (the production default of 10/min per IP would correctly block it).
-// Uses an installed Chrome/Edge (no browser download). DEMO password is read from backend/.env.
+// Uses an installed Chrome/Edge (no browser download). DEMO password: DEMO_USER_PASSWORD, or else read from the
+// backend's .env file (BACKEND_ENV_FILE, default ../../carbon_platform_new/backend/.env: the backend repository
+// checked out next to this one).
 const fs = require('fs');
 const path = require('path');
 const { chromium, request } = require('playwright-core');
@@ -10,8 +12,21 @@ const { chromium, request } = require('playwright-core');
 const BASE = process.env.BASE_URL || 'http://localhost:4200';
 const OUT = process.env.SHOTS_DIR || path.join(__dirname, 'screenshots');
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const env = fs.readFileSync(path.join(__dirname, '..', '..', 'backend', '.env'), 'utf8');
-const DEMO_PW = (process.env.DEMO_USER_PASSWORD || /^DEMO_USER_PASSWORD=(.*)$/m.exec(env)[1]).trim();
+const BACKEND_ENV_FILE = process.env.BACKEND_ENV_FILE
+  || path.join(__dirname, '..', '..', 'carbon_platform_new', 'backend', '.env');
+function readDemoPassword() {
+  let env;
+  try {
+    env = fs.readFileSync(BACKEND_ENV_FILE, 'utf8');
+  } catch (e) {
+    throw new Error(`DEMO_USER_PASSWORD is not set and ${BACKEND_ENV_FILE} cannot be read (${e.message}). `
+      + 'Set DEMO_USER_PASSWORD, or point BACKEND_ENV_FILE at the backend .env file.');
+  }
+  const m = /^DEMO_USER_PASSWORD=(.*)$/m.exec(env);
+  if (!m) throw new Error(`DEMO_USER_PASSWORD not found in ${BACKEND_ENV_FILE}`);
+  return m[1];
+}
+const DEMO_PW = (process.env.DEMO_USER_PASSWORD || readDemoPassword()).trim();
 fs.mkdirSync(OUT, { recursive: true });
 
 let stillIn = false;

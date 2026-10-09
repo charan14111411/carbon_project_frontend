@@ -1,0 +1,7 @@
+.git
+.angular
+.vscode
+dist
+node_modules
+e2e/screenshots
+*.md
