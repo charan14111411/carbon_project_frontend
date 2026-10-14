@@ -260,3 +260,45 @@ export interface ExternalDataView {
   providers: ExternalProvider[];
   observations: ExternalObservation[];
 }
+
+/** FarmFuture boundary import: estates / farms / mapped areas of a mobile number. Areas are candidates until saved as a boundary. */
+export interface FarmFutureFarm {
+  farm_id: string;
+  name: string;
+  postal_code: string | null;
+  crops: string[];
+  plants_per_hectare: number | null;
+  is_owner_estate: boolean;
+  active_subscription: boolean;
+}
+
+export interface FarmFutureEstate {
+  estate_id: string;
+  name: string;
+  postal_code: string | null;
+  is_fpo: boolean;
+  farms: FarmFutureFarm[];
+}
+
+export interface FarmFutureEstates {
+  phone_masked: string;
+  phone_source: 'ENTERED' | 'FARMER_PRIMARY_PHONE';
+  estates: FarmFutureEstate[];
+}
+
+export interface FarmFutureZone {
+  zone_id: string;
+  name: string;
+  is_main: boolean;
+  geojson: GeoGeometry;
+  vertex_count: number;
+  mean_altitude_m: number | null;
+}
+
+export interface FarmFutureAreas {
+  farm_id: string;
+  zones: FarmFutureZone[];
+  /** All zones dissolved into one shape by SQL Server; null with fewer than two zones. */
+  combined_geojson: GeoGeometry | null;
+  devices: { name: string; lat: number; lon: number; device_type: number | null }[];
+}
