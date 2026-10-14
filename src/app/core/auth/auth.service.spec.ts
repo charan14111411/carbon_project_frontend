@@ -68,4 +68,19 @@ describe('AuthService', () => {
     expect(auth.isAuthenticated()).toBe(false);
     expect(nav).toHaveBeenCalledWith(['/login']);
   });
+
+  it('a failed logout keeps the session (the refresh cookie survived) and reports the error', async () => {
+    const router = TestBed.inject(Router);
+    const nav = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    const done = firstValueFrom(auth.login('a@test.example', 'pw'));
+    http.expectOne('/api/v1/auth/login').flush({ access_token: 't', token_type: 'bearer', expires_in: 900, must_change_password: false });
+    http.expectOne('/api/v1/auth/me').flush(makeMe());
+    await done;
+    let failed: unknown = null;
+    auth.logout().subscribe({ error: (e: unknown) => (failed = e) });
+    http.expectOne('/api/v1/auth/logout').flush('down', { status: 503, statusText: 'Unavailable' });
+    expect(failed).not.toBeNull();
+    expect(auth.isAuthenticated()).toBe(true);
+    expect(nav).not.toHaveBeenCalled();
+  });
 });

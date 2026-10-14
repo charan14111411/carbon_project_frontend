@@ -1,3 +1,4 @@
+import { ChangeDetectorRef } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
@@ -84,6 +85,48 @@ describe('Finance screens', () => {
     expect(el.querySelector('[data-testid="cost-form"]')).toBeNull();
   });
 
+  it('cost form: a retry of the same values reuses its Idempotency-Key, success clears the form, a correction names its cost', async () => {
+    signIn(['revenue.read', 'costs.manage']);
+    const f = TestBed.createComponent(RevenuePage);
+    f.detectChanges();
+    http.expectOne('/api/v1/revenue/projects').flush([{ id: 'p1', project_code: 'PRJ-1', name: 'Rice', organization_id: 'o1', environment: 'LIVE',
+      periods: [], farms: [] }]);
+    const approved = { id: 'c0', cost_code: 'CST-1', project_id: 'p1', monitoring_period_id: null, category: 'Survey', description: 'Soil survey',
+      amount: '500.0000', currency: 'INR', incurred_on: '2026-09-01', external_reference: null, corrects_cost_id: null, status: 'APPROVED',
+      created_by_name: null, approved_by_name: null, reject_reason: null, settled_in_run_code: null, documents: [], created_at: '', environment: 'LIVE' };
+    const loads = () => {
+      http.expectOne((r) => r.url === '/api/v1/revenue/summary').flush({ revenue: [], settlements: [], open_recovery_cases: 0 });
+      http.expectOne((r) => r.url === '/api/v1/revenue').flush([]);
+      http.expectOne((r) => r.url === '/api/v1/costs').flush([approved]);
+    };
+    loads();
+    await f.whenStable();
+    type Form = { category: string; description: string; amount: string; currency: string; incurred_on: string; period: string; corrects: string };
+    const cmp = f.componentInstance as unknown as { c: Form; costValid(): boolean; record(): void };
+    cmp.c = { ...cmp.c, category: 'Travel', description: 'Field visit', amount: '120.50', incurred_on: '2026-10-01' };
+    expect(cmp.costValid()).toBe(true);
+    cmp.record();
+    const first = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/costs');
+    const key = first.request.headers.get('Idempotency-Key');
+    first.flush('down', { status: 503, statusText: 'Unavailable' });
+    cmp.record();                                                  // same values again: same key, so the server replays at most once
+    const retry = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/costs');
+    expect(retry.request.headers.get('Idempotency-Key')).toBe(key);
+    retry.flush({ ...approved, id: 'c1', status: 'PENDING_APPROVAL' });
+    loads();
+    expect(cmp.c.amount).toBe('');                                 // cleared after success
+    cmp.c = { ...cmp.c, category: 'Survey', description: 'Overcharged survey', amount: '-50.00', incurred_on: '2026-10-02' };
+    expect(cmp.costValid()).toBe(false);                           // a negative amount needs the approved cost it corrects
+    cmp.c.corrects = 'c0';
+    expect(cmp.costValid()).toBe(true);
+    cmp.record();
+    const correction = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/costs');
+    expect(correction.request.body.corrects_cost_id).toBe('c0');
+    expect(correction.request.headers.get('Idempotency-Key')).not.toBe(key);
+    correction.flush({ ...approved, id: 'c2', amount: '-50.0000', corrects_cost_id: 'c0', status: 'PENDING_APPROVAL' });
+    loads();
+  });
+
   it('sharing form has no default farmer percentage or rounding mode', async () => {
     signIn(['sharing.manage']);
     const f = TestBed.createComponent(SharingPage);
@@ -116,6 +159,48 @@ describe('Finance screens', () => {
     expect(text).not.toContain('Execute');
     expect(text).toContain('••••7890');
     expect(text).toContain('460.00 INR');
+  });
+
+  it('an UNCONFIRMED payout can only be marked FAILED with bank evidence; a reason alone sends no document', async () => {
+    signIn(['payouts.read', 'payouts.execute']);
+    const f = TestBed.createComponent(PayoutsPage);
+    f.detectChanges();
+    http.expectOne((r) => r.url === '/api/v1/payouts').flush([payout({ status: 'UNCONFIRMED' }), payout({ id: 'po2', payout_code: 'PYT-2', status: 'PAYMENT_PENDING' })]);
+    http.expectOne('/api/v1/payouts/adjustments').flush([]);
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    const page = f.componentInstance as unknown as { failReason: string; file: File | undefined };
+    const open = (i: number) => { el.querySelectorAll<HTMLButtonElement>('[data-testid="fail-open"]')[i].click(); f.detectChanges(); };
+    const submit = () => el.querySelector<HTMLButtonElement>('[data-testid="fail-submit"]')!;
+    const refresh = () => { f.componentRef.injector.get(ChangeDetectorRef).markForCheck(); f.detectChanges(); };   // OnPush page
+    // UNCONFIRMED: a reason is not enough
+    open(0);
+    page.failReason = 'Bank says it bounced';
+    refresh();
+    expect(el.querySelector('[data-testid="fail-form"]')?.textContent).toContain('attach a bank statement');
+    expect(submit().disabled).toBe(true);
+    // with evidence: the PDF is uploaded first, then FAILED names it
+    page.file = new File(['%PDF-1.4'], 'bank.pdf', { type: 'application/pdf' });
+    refresh();
+    expect(submit().disabled).toBe(false);
+    submit().click();
+    http.expectOne((r) => r.method === 'POST' && r.url === `/api/v1/payouts/${payout().id}/documents`).flush({ document_id: 'd1' });
+    const failed = http.expectOne((r) => r.method === 'POST' && r.url === `/api/v1/payouts/${payout().id}/fail`);
+    expect(failed.request.body).toEqual({ reason: 'Bank says it bounced', document_id: 'd1' });
+    failed.flush(payout({ status: 'FAILED' }));
+    http.expectOne((r) => r.url === '/api/v1/payouts').flush([]);
+    http.expectOne('/api/v1/payouts/adjustments').flush([]);
+    // PAYMENT_PENDING (manual): a reason alone is allowed and no document id is sent
+    f.componentInstance['payouts'].set([payout({ id: 'po2', payout_code: 'PYT-2', status: 'PAYMENT_PENDING' })]);
+    f.detectChanges();
+    open(0);
+    page.failReason = 'Account closed';
+    refresh();
+    submit().click();
+    const manual = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/payouts/po2/fail');
+    expect(manual.request.body).toEqual({ reason: 'Account closed' });
+    manual.flush(payout({ id: 'po2', status: 'FAILED' }));
   });
 
   it('My payouts lists only the farmer\'s own payouts or the unlinked note', async () => {

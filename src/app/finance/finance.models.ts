@@ -1,9 +1,9 @@
 /** Phase 11 — revenue, revenue-share configuration, farm allocation, costs, settlements, payouts. Money is a decimal STRING from the API
  *  (never a float); every figure (revenue, entitlement, payout) is calculated by the server — no form here ever sends a payout amount. */
 import { DocumentRef } from '../lab/lab.models';
-import { mlabel, money } from '../marketplace/marketplace.models';
+import { currencyDecimals, fitsMinorUnits, mlabel, money } from '../marketplace/marketplace.models';
 
-export { money };
+export { currencyDecimals, fitsMinorUnits, money };
 export const label = mlabel;
 export const FIN_DEMO_NOTE = 'DEMO — no registry-issued credits; no revenue, cost, entitlement or payout exists in DEMO';
 export const ROUNDING_MODES = ['HALF_UP', 'HALF_EVEN', 'DOWN'] as const;
@@ -118,4 +118,26 @@ export function pctTotal(values: readonly string[]): string {
 
 export function newKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * One Idempotency-Key per form and per form content. Sending the same values again (a double click, a retry after a lost response)
+ * reuses the key, so the server replays the first request instead of recording twice; any change to the values gets a fresh key.
+ * Call reset() once the request succeeded so the next, separate submission is never taken for a replay.
+ */
+export class FormKeys {
+  private readonly keys = new Map<string, { content: string; key: string }>();
+
+  for(form: string, body: unknown): string {
+    const content = JSON.stringify(body);
+    const known = this.keys.get(form);
+    if (known?.content === content) return known.key;
+    const key = newKey();
+    this.keys.set(form, { content, key });
+    return key;
+  }
+
+  reset(form: string): void {
+    this.keys.delete(form);
+  }
 }

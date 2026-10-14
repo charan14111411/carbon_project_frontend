@@ -32,6 +32,23 @@ describe('Phase 2 decisions', () => {
     svc.config().subscribe((c) => (got = c));
     http.expectOne('/api/v1/config/client').flush('down', { status: 503, statusText: 'Unavailable' });
     expect(got?.map).toEqual(FALLBACK_MAP);
+    svc.config().subscribe();                     // the failure is not cached for the session: the next map asks again
+    http.expectOne('/api/v1/config/client').flush({ map: FALLBACK_MAP });
+  });
+
+  it('D6: production builds never substitute public tiles and do not cache the failure', () => {
+    const svc = TestBed.inject(ClientConfigService);
+    (svc as unknown as { devFallback: boolean }).devFallback = false;
+    const http = TestBed.inject(HttpTestingController);
+    let got: ClientConfig | undefined;
+    let failed = false;
+    svc.config().subscribe({ next: (c) => (got = c), error: () => (failed = true) });
+    http.expectOne('/api/v1/config/client').flush('down', { status: 503, statusText: 'Unavailable' });
+    expect(failed).toBe(true);
+    expect(got).toBeUndefined();
+    svc.config().subscribe((c) => (got = c));
+    http.expectOne('/api/v1/config/client').flush({ map: { ...FALLBACK_MAP, provider: 'acme' } });
+    expect(got?.map.provider).toBe('acme');
   });
 
   it('D3: consent types are an admin item for consent configurers only', () => {

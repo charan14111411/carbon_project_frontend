@@ -1,8 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import * as L from 'leaflet';
 
-import { GeoMap, supportsWebGl } from './geo-map';
+import { GeoMap, supportsWebGl, textTooltip } from './geo-map';
 
 describe('GeoMap default view', () => {
   beforeEach(() => TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] }));
@@ -34,5 +35,20 @@ describe('GeoMap default view', () => {
     expect(cmp.mode()).toBe('3d');
     cmp.fallBack('no WebGL context');
     expect(cmp.mode()).toBe('2d');
+  });
+
+  it('shows labels (user-entered names) as text, never as HTML', () => {
+    const label = '<img src=x onerror="alert(1)">Farm';
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+    const map = L.map(div).setView([0, 0], 2);
+    const marker = L.marker([0, 0]).addTo(map).bindTooltip(textTooltip(label), { permanent: true });
+    marker.openTooltip();
+    const tip = div.querySelector('.leaflet-tooltip');
+    expect(tip).not.toBeNull();
+    expect(tip?.querySelector('img')).toBeNull();
+    expect(tip?.textContent).toBe(label);
+    map.remove();
+    div.remove();
   });
 });

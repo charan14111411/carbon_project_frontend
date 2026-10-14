@@ -25,6 +25,15 @@ export function matchValidator(a: string, b: string): ValidatorFn {
 }
 
 /**
+ * Language code as the API accepts it (backend `Lang`: lower-case, checked before it would lower-case it): "MR" → "mr",
+ * "en-IN" → "en-in"; blank → null.
+ */
+export function languageCode(value: string): string | null {
+  const v = value.trim();
+  return v ? v.toLowerCase() : null;
+}
+
+/**
  * Puts server-side field errors (422 details.errors[]) onto the matching form controls.
  * Returns messages that could not be attached to a control.
  */

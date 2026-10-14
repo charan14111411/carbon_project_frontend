@@ -8,6 +8,7 @@ import { AuthService } from '../core/auth/auth.service';
 import { NAVIGATION, visibleNavigation } from '../core/navigation/nav.config';
 import { CreditsPage } from './credits-page';
 import { RegistryPanel } from './registry-panel';
+import { RegistryApi } from './registry.api';
 import {
   Batch, CALCULATED_LABEL, DEMO_NOTE, ISSUED_LABEL, Issuance, PeriodRegistry, SubmissionDetail, VERIFIED_LABEL, isOpen, issuanceBadge, serialText,
   submissionBadge,
@@ -143,6 +144,37 @@ describe('Registry screens', () => {
     expect(el.querySelector('[data-testid="record-issuance"]')).not.toBeNull();
     expect((el.querySelector('[data-testid="record-issuance"]') as HTMLButtonElement).disabled).toBe(true);   // evidence and data first
     expect(el.querySelector('[data-testid="confirm-issuance"]')).toBeNull();
+  });
+
+  it('MANUAL accounts get no registry-API buttons but a manual reconciliation with outcome and evidence (ReconcileIn)', async () => {
+    signIn(['registry.read', 'registry.manage']);
+    const d = detail({ status: 'SUBMISSION_UNCONFIRMED', external_submission_id: null, issuances: [] });
+    const s = { ...d, snapshot: undefined } as unknown as PeriodRegistry['submissions'][number];
+    const f = panel(view({ submissions: [s] }), d);
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="reconcile-api"]')).toBeNull();
+    expect(el.querySelector('[data-testid="send-api"]')).toBeNull();
+    expect(el.querySelector('[data-testid="manual-reconcile"]')).not.toBeNull();
+    expect((el.querySelector('[data-testid="reconcile-manual"]') as HTMLButtonElement).disabled).toBe(true);   // outcome and evidence first
+    const cmp = f.componentInstance as unknown as { rec: { outcome: string; external: string; note: string }; files: Record<string, File | undefined>;
+      reconcileManual(x: SubmissionDetail): void };
+    cmp.rec = { outcome: 'FOUND', external: 'R-SUB-9', note: '' };
+    cmp.files['reconcile'] = new File(['%PDF'], 'registry.pdf', { type: 'application/pdf' });
+    cmp.reconcileManual(d);
+    http.expectOne('/api/v1/registry/submissions/s1/documents').flush({ document_id: 'd7', category: 'REGISTRY_RESPONSE', title: null, file_name: null,
+      sha256: null, uploaded_at: null });
+    const req = http.expectOne('/api/v1/registry/submissions/s1/reconcile');
+    expect(req.request.body).toEqual({ outcome: 'FOUND', document_id: 'd7', external_submission_id: 'R-SUB-9', note: null });
+    req.flush({ ...d, status: 'SUBMITTED' });
+  });
+
+  it('an API reconciliation sends no body (never an empty ReconcileIn)', () => {
+    TestBed.inject(RegistryApi).reconcile('s1', null).subscribe();
+    const req = http.expectOne('/api/v1/registry/submissions/s1/reconcile');
+    expect(req.request.body).toBeNull();
+    req.flush(detail());
   });
 
   it('credits page lists registry-issued batches read-only, with no transfer or retirement controls', async () => {

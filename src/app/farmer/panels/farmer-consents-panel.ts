@@ -9,6 +9,7 @@ import { MatSelectModule } from '@angular/material/select';
 
 import { ConsentDefinition, ConsentsApi } from '../../core/api/consents.api';
 import { NotifyService } from '../../core/notify.service';
+import { languageCode } from '../../shared/forms';
 import { askReason } from '../../shared/reason-dialog';
 import { runAction } from '../../shared/run-action';
 import { StatusBadge } from '../../shared/status-badge';
@@ -100,7 +101,7 @@ export class FarmerConsentsPanel implements OnInit {
 
   grant(): void {
     const v = this.form.getRawValue();
-    runAction(this.api.grantConsent(this.farmer().id, { ...v, language: v.language.trim() || null }), this.busy, this.notify,
+    runAction(this.api.grantConsent(this.farmer().id, { ...v, language: languageCode(v.language) }), this.busy, this.notify,
       'Consent recorded.', (f) => this.changed.emit(f));
   }
 

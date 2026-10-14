@@ -99,6 +99,8 @@ export class ChangePasswordPage {
   }
 
   signOut(): void {
-    this.auth.logout().subscribe();
+    this.auth.logout().subscribe({
+      error: (e: unknown) => this.notify.errorWithRetry('Sign-out failed — you are still signed in.', e, () => this.signOut()),
+    });
   }
 }

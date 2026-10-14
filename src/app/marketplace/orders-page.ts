@@ -10,6 +10,7 @@ import { Observable, switchMap } from 'rxjs';
 
 import { DocumentsApi } from '../core/api/documents.api';
 import { NotifyService } from '../core/notify.service';
+import { LedgerApi } from '../ledger/ledger.api';
 import { PageHeader } from '../shared/page-header';
 import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
@@ -52,8 +53,14 @@ import { LineageStep, NOT_INVOICE, Order, OrderItem, Orders, Payment, Refund, ma
               <td>{{ it.batch_code }} · {{ it.vintage }}</td><td>{{ it.quantity }}</td><td>{{ money(it.unit_price, o.currency) }}</td>
               <td>{{ money(it.line_total, o.currency) }}</td><td>{{ it.reservation_code }} {{ it.reservation_status ? label(it.reservation_status) : '' }}</td>
               <td>{{ it.transfer_code }} {{ it.transfer_status ? label(it.transfer_status) : '' }}</td>
-              <td>@if (it.can_complete) {
-                <button mat-flat-button type="button" [disabled]="busy()" (click)="complete(it)">Complete delivery</button>
+              <td>@if (it.can_complete && it.transfer_id; as tid) {
+                @if (o.transfer_kind === 'REGISTRY') {
+                  <!-- a registry delivery completes only with the registry's transfer reference and its evidence PDF (REGISTRY_EVIDENCE_REQUIRED) -->
+                  <input class="ref" placeholder="Registry transfer reference" [(ngModel)]="tref[tid]" [attr.data-testid]="'tref-' + it.item_code" />
+                  <input type="file" accept="application/pdf" (change)="pickTransferDoc(tid, $event)" [attr.data-testid]="'tdoc-' + it.item_code" />
+                }
+                <button mat-flat-button type="button" [disabled]="busy() || !canComplete(o, tid)" (click)="complete(o, it)"
+                  [attr.data-testid]="'complete-' + it.item_code">Complete delivery</button>
                 <button mat-button type="button" [disabled]="busy()" (click)="rejectDelivery(it)">Reject</button> }</td></tr>
           }
         </tbody></table>
@@ -112,6 +119,7 @@ import { LineageStep, NOT_INVOICE, Order, OrderItem, Orders, Payment, Refund, ma
 export class OrdersPage implements OnInit {
   private readonly api = inject(MarketplaceApi);
   private readonly docs = inject(DocumentsApi);
+  private readonly ledger = inject(LedgerApi);
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
   private readonly route = inject(ActivatedRoute);
@@ -127,6 +135,9 @@ export class OrdersPage implements OnInit {
   protected file: File | undefined;
   protected refundRef: Record<string, string> = {};
   protected refundFile: Record<string, File | undefined> = {};
+  /** REGISTRY deliveries: registry transfer reference and evidence PDF, per transfer id. */
+  protected tref: Record<string, string> = {};
+  protected tdoc: Record<string, File | undefined> = {};
   private keys: Record<string, string> = {};
 
   ngOnInit(): void {
@@ -224,10 +235,27 @@ export class OrdersPage implements OnInit {
       .subscribe((x) => { if (x) this.act(this.api.retry(o.id, x.reason, newKey()), 'Delivery requested again.'); });
   }
 
-  protected complete(it: OrderItem): void {
-    if (!it.transfer_id) return;
+  protected pickTransferDoc(transferId: string, ev: Event): void {
+    this.tdoc[transferId] = (ev.target as HTMLInputElement).files?.[0];
+  }
+
+  protected canComplete(o: Order, transferId: string): boolean {
+    return o.transfer_kind !== 'REGISTRY' || (!!this.tref[transferId]?.trim() && !!this.tdoc[transferId]);
+  }
+
+  protected complete(o: Order, it: OrderItem): void {
     const id = it.transfer_id;
-    this.act(this.api.completeTransfer(id, {}, this.key('del-' + id)), 'Delivery completed — the buyer now holds the credits.', 'del-' + id);
+    if (!id || this.busy() || !this.canComplete(o, id)) return;
+    const name = 'del-' + id;
+    if (o.transfer_kind !== 'REGISTRY') {
+      this.act(this.api.completeTransfer(id, {}, this.key(name)), 'Delivery completed — the buyer now holds the credits.', name);
+      return;
+    }
+    // As on the Ledger page: attach the registry's evidence to the transfer, then complete with its reference (one atomic completion).
+    const file = this.tdoc[id]!;
+    this.act(this.ledger.transferDoc(id, file).pipe(switchMap((d) => this.api.completeTransfer(id, {
+      registry_transfer_reference: (this.tref[id] ?? '').trim(), document_id: d.document_id }, this.key(name)))),
+    'Registry delivery completed — the buyer now holds the credits.', name);
   }
 
   protected rejectDelivery(it: OrderItem): void {

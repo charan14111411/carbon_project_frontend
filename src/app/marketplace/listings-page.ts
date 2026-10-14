@@ -17,7 +17,7 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { MarketplaceApi } from './marketplace.api';
-import { Listing, Listings, marketBadge, money, mlabel, newKey } from './marketplace.models';
+import { Listing, Listings, currencyDecimals, fitsMinorUnits, marketBadge, money, mlabel, newKey } from './marketplace.models';
 
 interface Owner { batch: InventoryBatch; owner_id: string; owner_name: string | null; available: number }
 
@@ -44,7 +44,8 @@ interface Owner { batch: InventoryBatch; owner_id: string; owner_name: string | 
         <div class="row">
           <mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Title</mat-label><input matInput [(ngModel)]="f.title" /></mat-form-field>
           <mat-form-field subscriptSizing="dynamic"><mat-label>Listed quantity (credits)</mat-label><input matInput type="number" min="1" step="1" [(ngModel)]="f.qty" /></mat-form-field>
-          <mat-form-field subscriptSizing="dynamic"><mat-label>Price per credit</mat-label><input matInput [(ngModel)]="f.price" placeholder="12.50" /></mat-form-field>
+          <mat-form-field subscriptSizing="dynamic"><mat-label>Price per credit</mat-label><input matInput [(ngModel)]="f.price" placeholder="12.50" inputmode="decimal" />
+            <mat-hint>At most {{ decimals(f.currency) }} decimals for {{ f.currency.toUpperCase() }}</mat-hint></mat-form-field>
           <mat-form-field subscriptSizing="dynamic"><mat-label>Currency (ISO 4217)</mat-label><input matInput maxlength="3" [(ngModel)]="f.currency" /></mat-form-field>
         </div>
         <div class="row">
@@ -97,6 +98,7 @@ export class ListingsPage implements OnInit {
   protected readonly label = mlabel;
   protected readonly badge = marketBadge;
   protected readonly money = money;
+  protected readonly decimals = currencyDecimals;
   protected readonly canCreate = inject(AuthService).has(P.LISTINGS_MANAGE);
   protected readonly data = signal<Listings | null>(null);
   protected readonly owners = signal<Owner[]>([]);
@@ -132,7 +134,7 @@ export class ListingsPage implements OnInit {
 
   protected valid(): boolean {
     const q = Number(this.f.qty);
-    return !!this.source && this.f.title.trim().length > 0 && Number.isInteger(q) && q > 0 && /^\d+(\.\d{1,4})?$/.test(this.f.price.trim())
+    return !!this.source && this.f.title.trim().length > 0 && Number.isInteger(q) && q > 0 && fitsMinorUnits(this.f.price, this.f.currency) && Number(this.f.price) > 0
       && /^[A-Za-z]{3}$/.test(this.f.currency.trim()) && Number(this.f.window) >= 1 && Number(this.f.window) <= 720;
   }
 

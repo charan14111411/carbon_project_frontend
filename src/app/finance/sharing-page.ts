@@ -16,7 +16,7 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { FinanceApi } from './finance.api';
-import { Allocation, FinanceProject, ROUNDING_MODES, ShareVersion, finBadge, label, newKey, pctTotal } from './finance.models';
+import { Allocation, FinanceProject, FormKeys, ROUNDING_MODES, ShareVersion, finBadge, label, pctTotal } from './finance.models';
 import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
 
 /** Revenue-share versions (the farmer share percentage, cost deduction and rounding mode come from the project's agreements — the platform
@@ -107,8 +107,10 @@ export class SharingPage {
   protected readonly versions = signal<ShareVersion[]>([]);
   protected readonly allocations = signal<Allocation[]>([]);
   protected readonly busy = signal(false);
-  protected s = { pct: '', rounding: '', deduct: false, from: '', to: '', source: '' };
+  protected s = blankShare();
   protected a: { period: string; basis: string; shares: Record<string, string> } = { period: '', basis: '', shares: {} };
+  /** Same values -> same Idempotency-Key: a double click or retry replays on the server instead of creating a second draft. */
+  private readonly keys = new FormKeys();
 
   protected select(p: FinanceProject): void {
     this.project.set(p);
@@ -123,8 +125,11 @@ export class SharingPage {
     this.api.allocations(p.id).subscribe((x) => this.allocations.set(x));
   }
 
-  private act<T>(obs: Observable<T>, message: string): void {
-    runAction(obs, this.busy, this.notify, message, () => this.reload());
+  private act<T>(obs: Observable<T>, message: string, done?: () => void): void {
+    runAction(obs, this.busy, this.notify, message, () => {
+      done?.();
+      this.reload();
+    });
   }
 
   protected shareValid(): boolean {
@@ -135,19 +140,24 @@ export class SharingPage {
 
   protected createShare(): void {
     const p = this.project();
-    if (!p) return;
-    this.act(this.api.createShareVersion({ project_id: p.id, farmer_share_pct: this.s.pct.trim(), deduct_approved_costs: this.s.deduct,
-      rounding_mode: this.s.rounding, effective_from: this.s.from, effective_to: this.s.to || null, source_reference: this.s.source.trim() },
-    newKey()), 'Draft version created.');
+    if (!p || this.busy() || !this.shareValid()) return;
+    const body = { project_id: p.id, farmer_share_pct: this.s.pct.trim(), deduct_approved_costs: this.s.deduct,
+      rounding_mode: this.s.rounding, effective_from: this.s.from, effective_to: this.s.to || null, source_reference: this.s.source.trim() };
+    this.act(this.api.createShareVersion(body, this.keys.for('share', body)), 'Draft version created.', () => {
+      this.keys.reset('share');
+      this.s = blankShare();
+    });
   }
 
   protected shareAct(v: ShareVersion, action: 'submit' | 'approve'): void {
-    this.act(this.api.shareAction(v.id, action, {}, newKey()), action === 'submit' ? 'Submitted for review.' : 'Version approved.');
+    this.act(this.api.shareAction(v.id, action, {}, this.keys.for(`${action}-${v.id}`, {})),
+      action === 'submit' ? 'Submitted for review.' : 'Version approved.');
   }
 
   protected shareReturn(v: ShareVersion): void {
-    askReason(this.dialog, { title: `Return ${v.version_code}?`, confirmLabel: 'Return to author' })
-      .subscribe((r) => { if (r) this.act(this.api.shareAction(v.id, 'return', { reason: r.reason }, newKey()), 'Returned.'); });
+    askReason(this.dialog, { title: `Return ${v.version_code}?`, confirmLabel: 'Return to author' }).subscribe((r) => {
+      if (r) this.act(this.api.shareAction(v.id, 'return', { reason: r.reason }, this.keys.for(`return-${v.id}`, r.reason)), 'Returned.');
+    });
   }
 
   private lines(): { project_farm_id: string; share_pct: string }[] {
@@ -165,17 +175,26 @@ export class SharingPage {
 
   protected createAlloc(): void {
     const p = this.project();
-    if (!p) return;
-    this.act(this.api.createAllocation({ project_id: p.id, monitoring_period_id: this.a.period, basis_reference: this.a.basis.trim(),
-      lines: this.lines() }, newKey()), 'Draft allocation created.');
+    if (!p || this.busy() || !this.allocValid()) return;
+    const body = { project_id: p.id, monitoring_period_id: this.a.period, basis_reference: this.a.basis.trim(), lines: this.lines() };
+    this.act(this.api.createAllocation(body, this.keys.for('alloc', body)), 'Draft allocation created.', () => {
+      this.keys.reset('alloc');
+      this.a = { period: '', basis: '', shares: {} };
+    });
   }
 
   protected allocAct(x: Allocation, action: 'submit' | 'approve'): void {
-    this.act(this.api.allocationAction(x.id, action, {}, newKey()), action === 'submit' ? 'Submitted for review.' : 'Allocation approved.');
+    this.act(this.api.allocationAction(x.id, action, {}, this.keys.for(`${action}-${x.id}`, {})),
+      action === 'submit' ? 'Submitted for review.' : 'Allocation approved.');
   }
 
   protected allocReturn(x: Allocation): void {
-    askReason(this.dialog, { title: `Return ${x.version_code}?`, confirmLabel: 'Return to author' })
-      .subscribe((r) => { if (r) this.act(this.api.allocationAction(x.id, 'return', { reason: r.reason }, newKey()), 'Returned.'); });
+    askReason(this.dialog, { title: `Return ${x.version_code}?`, confirmLabel: 'Return to author' }).subscribe((r) => {
+      if (r) this.act(this.api.allocationAction(x.id, 'return', { reason: r.reason }, this.keys.for(`return-${x.id}`, r.reason)), 'Returned.');
+    });
   }
+}
+
+function blankShare() {
+  return { pct: '', rounding: '', deduct: false, from: '', to: '', source: '' };
 }

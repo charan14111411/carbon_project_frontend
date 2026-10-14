@@ -55,9 +55,10 @@ import { ResultLabView, TestLabView, labBadge, resultTypeApprovable, resultValue
             <mat-form-field subscriptSizing="dynamic"><mat-label>Value (verbatim)</mat-label><input matInput [(ngModel)]="valueText" data-testid="result-text" /></mat-form-field>
           }
           <mat-form-field subscriptSizing="dynamic"><mat-label>Unit</mat-label><input matInput [(ngModel)]="unit" data-testid="result-unit" /></mat-form-field>
-          <mat-form-field subscriptSizing="dynamic"><mat-label>Analysed at</mat-label><input matInput type="datetime-local" step="1" [(ngModel)]="analysedAt" /></mat-form-field>
+          <mat-form-field subscriptSizing="dynamic"><mat-label>Analysed at</mat-label><input matInput type="datetime-local" step="1" required [(ngModel)]="analysedAt" data-testid="result-analysed-at" /></mat-form-field>
           <button mat-flat-button type="button" [disabled]="busy() || !canSave()" (click)="save()" data-testid="save-result">Save result</button>
         </div>
+        @if (!analysedIso()) { <p class="note warn">Enter when the sample was analysed (date and time) to save the result.</p> }
         @if (unitState() === 'MISMATCH') { <p class="note warn">The unit differs from the required "{{ t.required_unit }}". Values are never converted — QA will fail (UNIT_MISMATCH).</p> }
         @if (!typeApprovable()) { <p class="note warn">A text result cannot be approved for a numeric parameter; it will be stored exactly as entered.</p> }
       }
@@ -143,7 +144,14 @@ export class LabTestPage {
   }
 
   protected canSave(): boolean {
+    if (!this.analysedIso()) return false;
     return this.resultType === 'NUMERIC' ? this.valueNumber !== null && `${this.valueNumber}` !== '' : !!this.valueText.trim();
+  }
+
+  /** "Analysed at" as an ISO instant, or null while it is empty or not a valid date (new Date('').toISOString() throws). */
+  protected analysedIso(): string | null {
+    const d = this.analysedAt ? new Date(this.analysedAt) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
   }
 
   protected start(): void {
@@ -151,7 +159,9 @@ export class LabTestPage {
   }
 
   protected save(): void {
-    const body: Record<string, unknown> = { result_type: this.resultType, unit: this.unit.trim() || null, analysed_at: new Date(this.analysedAt).toISOString(),
+    const analysedAt = this.analysedIso();
+    if (!analysedAt || !this.canSave()) return;
+    const body: Record<string, unknown> = { result_type: this.resultType, unit: this.unit.trim() || null, analysed_at: analysedAt,
       method_reported: this.method.trim() || null };
     if (this.resultType === 'NUMERIC') body['value_number'] = this.valueNumber;
     else body['value_text'] = this.valueText;            // verbatim, never parsed

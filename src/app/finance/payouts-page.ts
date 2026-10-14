@@ -48,7 +48,7 @@ import { FIN_STYLES } from './project-picker';
               @if (can.execute && p.status === 'APPROVED') { <button mat-flat-button type="button" [disabled]="busy()" (click)="act(p, 'initiate')">Execute</button> }
               @if (can.execute && (p.status === 'PAYMENT_PENDING' || p.status === 'UNCONFIRMED')) {
                 <button mat-button type="button" [disabled]="busy()" (click)="openPaid(p)">Record paid</button>
-                <button mat-button type="button" [disabled]="busy()" (click)="withReason(p, 'fail')">Failed</button> }
+                <button mat-button type="button" [disabled]="busy()" (click)="openFail(p)" data-testid="fail-open">Failed</button> }
               @if (can.reconcile && p.status === 'PAID') { <button mat-button type="button" [disabled]="busy()" (click)="openRec(p)">Reconcile</button> }
             </td></tr>
         } @empty { <tr><td colspan="7" class="muted" data-testid="no-payouts">No payout.</td></tr> }
@@ -60,6 +60,20 @@ import { FIN_STYLES } from './project-picker';
           <input type="file" accept="application/pdf" (change)="pick($event)" /></div>
         <button mat-flat-button type="button" [disabled]="busy() || !paid.ref.trim() || !file" (click)="confirmPaid(p)">Upload evidence and record PAID</button>
         <button mat-button type="button" (click)="paying.set(null)">Close</button>
+      </section>
+    }
+    @if (failing(); as p) {
+      <section class="box" data-testid="fail-form"><h3>Record that {{ p.payout_code }} failed</h3>
+        <p class="small muted">
+          @if (p.status === 'UNCONFIRMED') { The bank or provider has not confirmed the outcome, so attach a bank statement or letter (PDF)
+            showing the money did not leave. Without it a reissue could pay the farmer twice. }
+          @else { Attach bank evidence if you have it (required when the payment is pending at a provider). }
+        </p>
+        <div class="row"><mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Reason</mat-label><input matInput [(ngModel)]="failReason" data-testid="fail-reason" /></mat-form-field>
+          <input type="file" accept="application/pdf" (change)="pick($event)" data-testid="fail-file" /></div>
+        <button mat-flat-button type="button" color="warn" [disabled]="busy() || !failReason.trim() || (p.status === 'UNCONFIRMED' && !file)"
+          (click)="recordFail(p)" data-testid="fail-submit">Record FAILED</button>
+        <button mat-button type="button" (click)="failing.set(null)">Close</button>
       </section>
     }
     @if (reconciling(); as p) {
@@ -107,6 +121,8 @@ export class PayoutsPage implements OnInit {
   protected readonly adjustments = signal<Adjustment[]>([]);
   protected readonly paying = signal<Payout | null>(null);
   protected readonly reconciling = signal<Payout | null>(null);
+  protected readonly failing = signal<Payout | null>(null);
+  protected failReason = '';
   protected readonly busy = signal(false);
   protected file: File | undefined;
   protected paid = { ref: '' };
@@ -131,7 +147,7 @@ export class PayoutsPage implements OnInit {
     this.run(this.api.payoutAction(p.id, action, {}, newKey()), msg);
   }
 
-  protected withReason(p: Payout, action: 'reject' | 'cancel' | 'release-hold' | 'fail'): void {
+  protected withReason(p: Payout, action: 'reject' | 'cancel' | 'release-hold'): void {
     askReason(this.dialog, { title: `${label(action)} ${p.payout_code}?`, confirmLabel: label(action), danger: action !== 'release-hold' })
       .subscribe((x) => { if (x) this.run(this.api.payoutAction(p.id, action, { reason: x.reason }, newKey()), 'Done.'); });
   }
@@ -140,10 +156,35 @@ export class PayoutsPage implements OnInit {
     this.file = (ev.target as HTMLInputElement).files?.[0];
   }
 
+  protected openFail(p: Payout): void {
+    this.file = undefined;
+    this.failReason = '';
+    this.paying.set(null);
+    this.reconciling.set(null);
+    this.failing.set(p);
+  }
+
+  /** UNCONFIRMED (or pending at a provider) needs bank evidence before FAILED: a reissue must never pay twice. */
+  protected recordFail(p: Payout): void {
+    const reason = this.failReason.trim();
+    if (!reason || this.busy()) return;
+    const done = (documentId?: string) => {
+      this.failing.set(null);
+      this.run(this.api.payoutAction(p.id, 'fail', documentId ? { reason, document_id: documentId } : { reason }, newKey()), 'Recorded as FAILED.');
+    };
+    if (!this.file) { done(); return; }
+    this.busy.set(true);
+    this.api.payoutDocument(p.id, this.file, 'PAYOUT_EVIDENCE').subscribe({
+      next: (d) => { this.busy.set(false); done(d.document_id); },
+      error: (e: unknown) => { this.busy.set(false); this.notify.error(e); },
+    });
+  }
+
   protected openPaid(p: Payout): void {
     this.file = undefined;
     this.paid = { ref: '' };
     this.reconciling.set(null);
+    this.failing.set(null);
     this.paying.set(p);
   }
 
@@ -151,6 +192,7 @@ export class PayoutsPage implements OnInit {
     this.file = undefined;
     this.rec = { ref: '', amount: '', currency: p.currency, date: '', note: '' };
     this.paying.set(null);
+    this.failing.set(null);
     this.reconciling.set(p);
   }
 

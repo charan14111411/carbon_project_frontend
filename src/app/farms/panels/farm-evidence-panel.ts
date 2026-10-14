@@ -87,8 +87,8 @@ export class FarmEvidencePanel implements OnInit {
   protected readonly form = new FormGroup({
     claim_type: new FormControl('CROP', { nonNullable: true }),
     source_type: new FormControl('FIELD_AGENT', { nonNullable: true }),
-    description: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(3)] }),
-    external_reference: new FormControl('', { nonNullable: true }),
+    description: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(3), Validators.maxLength(2000)] }),
+    external_reference: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(300)] }),
   });
 
   ngOnInit(): void {
@@ -114,7 +114,9 @@ export class FarmEvidencePanel implements OnInit {
     const id = this.farm().id;
     const file = this.file();
     const category = file?.type.startsWith('image/') ? 'FIELD_PHOTO' : 'OTHER';
-    const upload$: Observable<{ id: string } | null> = file ? this.api.uploadDocument(id, file, category, v.description) : of(null);
+    // The description doubles as the document title, which the server caps at 200 characters (the evidence keeps the full text).
+    const title = Array.from(v.description.trim()).slice(0, 200).join('');
+    const upload$: Observable<{ id: string } | null> = file ? this.api.uploadDocument(id, file, category, title) : of(null);
     const c = this.coords();
     runAction(upload$.pipe(switchMap((doc) => this.api.addEvidence(id, {
       claim_type: v.claim_type, source_type: v.source_type, description: v.description.trim(), document_id: doc?.id ?? null,

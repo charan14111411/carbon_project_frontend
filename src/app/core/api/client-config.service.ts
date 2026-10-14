@@ -1,5 +1,5 @@
-import { Injectable, inject } from '@angular/core';
-import { Observable, catchError, of, shareReplay } from 'rxjs';
+import { Injectable, inject, isDevMode } from '@angular/core';
+import { Observable, catchError, of, shareReplay, throwError } from 'rxjs';
 
 import { ApiService } from './api.service';
 
@@ -34,8 +34,8 @@ export interface ClientConfig {
 }
 
 /**
- * Development fallback used only if the config endpoint cannot be reached (OpenStreetMap public tiles and Esri World Imagery:
- * dev use only), so the 3D view still opens on satellite imagery.
+ * Development fallback used only in development builds when the config endpoint cannot be reached (OpenStreetMap public tiles and
+ * Esri World Imagery: dev use only), so the 3D view still opens on satellite imagery. Production builds never use it.
  */
 export const FALLBACK_MAP: MapConfig = {
   provider: 'osm-dev',
@@ -54,10 +54,19 @@ export const FALLBACK_MAP: MapConfig = {
 export class ClientConfigService {
   private readonly api = inject(ApiService);
   private cached?: Observable<ClientConfig>;
+  /** Public dev tiles may stand in for an unreachable config endpoint only in development builds. */
+  private readonly devFallback = isDevMode();
 
+  /**
+   * Server map configuration, fetched once per session. A failure is never kept: the next map asks again. Production builds pass
+   * the error on (maps then draw shapes without a basemap) instead of silently loading public tiles; development builds fall back.
+   */
   config(): Observable<ClientConfig> {
     this.cached ??= this.api.get<ClientConfig>('/config/client').pipe(
-      catchError(() => of({ map: FALLBACK_MAP })),
+      catchError((err: unknown) => {
+        this.cached = undefined;
+        return this.devFallback ? of({ map: FALLBACK_MAP }) : throwError(() => err);
+      }),
       shareReplay({ bufferSize: 1, refCount: false }),
     );
     return this.cached;

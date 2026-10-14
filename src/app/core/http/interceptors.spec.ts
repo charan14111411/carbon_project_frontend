@@ -86,6 +86,17 @@ describe('HTTP interceptors', () => {
     expect(err.fieldErrors).toEqual([{ field: 'email', message: 'bad email' }]);
   });
 
+  it('reads the error envelope of a failed download (Blob body) so the error code is kept', async () => {
+    const result = rejection(firstValueFrom(http.get('/api/v1/evidence/documents/d1/download', { responseType: 'blob' })));
+    const envelope = { success: false, error_code: 'DOCUMENT_QUARANTINED', message: 'This document is quarantined.', details: {}, request_id: 'r1' };
+    ctl.expectOne('/api/v1/evidence/documents/d1/download').flush(
+      new Blob([JSON.stringify(envelope)], { type: 'application/json' }), { status: 409, statusText: 'Conflict' });
+    const err = await result;
+    expect(err.code).toBe('DOCUMENT_QUARANTINED');
+    expect(err.message).toBe('This document is quarantined.');
+    expect(err.requestId).toBe('r1');
+  });
+
   it('reports network failures clearly', async () => {
     const result = rejection(firstValueFrom(http.get('/api/v1/health')));
     ctl.expectOne('/api/v1/health').error(new ProgressEvent('error'), { status: 0 });

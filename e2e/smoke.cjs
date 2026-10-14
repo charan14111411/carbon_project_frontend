@@ -92,6 +92,14 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
     return { ctx, page };
   }
   const shot = async (page, name) => page.screenshot({ path: path.join(OUT, `${name}.jpg`), type: 'jpeg', quality: 70 });
+  // Maps open in 3D (MapLibre) when WebGL is available; the Leaflet shapes checked below live in the 2D view, so switch to it first.
+  async function show2d(page) {
+    const toggle = page.getByRole('group', { name: 'Map view' }).getByRole('button', { name: '2D', exact: true }).first();
+    try {
+      await toggle.waitFor({ state: 'visible', timeout: 5000 });   // the toggle renders with the map, after the page's own data
+      await toggle.click();
+    } catch { /* no 3D toggle (no WebGL / 2D-only map): already 2D */ }
+  }
   // Material select: open by its label, pick the first matching enabled option.
   async function choose(page, labelText, option) {
     // A Material select does not open until its options have loaded, so retry the click briefly.
@@ -161,6 +169,7 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await shot(pm.page, '12-farms');
   await pm.page.getByText('Pimpalgaon plot 1 (DEMO)').first().click();
   await pm.page.getByText('Measured area').waitFor();
+  await show2d(pm.page);
   await pm.page.locator('.leaflet-interactive').first().waitFor();
   await pm.page.waitForTimeout(1500);
   await shot(pm.page, '13-farm-overview');
@@ -172,8 +181,8 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await gis.page.getByRole('button', { name: 'Sign in' }).click();
   await gis.page.getByText('Welcome,').waitFor();
   await gis.page.goto(`${BASE}/farms`);
-  await gis.page.getByText('GIS_REVIEW').first().waitFor();
-  await gis.page.getByText('GIS_REVIEW').first().click();
+  await gis.page.getByText(/GIS[_ ]review/i).first().waitFor();   // status shown as a label since the UI redesign
+  await gis.page.getByText(/GIS[_ ]review/i).first().click();
   await gis.page.getByRole('tab', { name: /Overlaps/ }).click();
   await gis.page.getByText('Clear', { exact: true }).waitFor();
   await shot(gis.page, '14-overlaps');
@@ -188,11 +197,15 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await col.page.getByText('Sinnar plot 2 (DEMO)').first().waitFor();
   await col.page.getByText('Sinnar plot 2 (DEMO)').first().click();
   await col.page.getByRole('tab', { name: 'Boundary' }).click();
+  await show2d(col.page);                 // boundaries are drawn on the 2D (Leaflet) map
   const map = col.page.locator('.map').first();
   await map.waitFor();
+  await map.scrollIntoViewIfNeeded();     // the editor's controls above the map push it below the fold
   await col.page.waitForTimeout(1200);
   const box = await map.boundingBox();
-  for (const [dx, dy] of [[0.35, 0.35], [0.65, 0.35], [0.65, 0.65], [0.35, 0.65]]) {
+  const vh = col.page.viewportSize().height;
+  const fy = (f) => Math.min(box.y + box.height * f, vh - 20) - box.y;   // keep every click inside the visible part of the map
+  for (const [dx, dy] of [[0.35, fy(0.25) / box.height], [0.65, fy(0.25) / box.height], [0.65, fy(0.5) / box.height], [0.35, fy(0.5) / box.height]]) {
     await col.page.mouse.click(box.x + box.width * dx, box.y + box.height * dy);
     await col.page.waitForTimeout(150);
   }
@@ -223,7 +236,8 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await P.getByRole('button', { name: 'Start data collection' }).click();
   await confirmReason(P, 'Start data collection', 'E2E: collecting project data');
   await P.getByText('Data collection', { exact: true }).first().waitFor();
-  // farms: pick a verified farm; it is already in a DEMO project, so the conflict must be acknowledged (not rejected)
+  // farms: pick a verified farm; it is already in a DEMO project, so the conflict must be acknowledged (not rejected) here; since
+  // 14 Oct 2026 it must be resolved before MRV planning (double counting), which Phase 5 does below
   await P.getByRole('tab', { name: /^Farms/ }).click();
   await choose(P, 'Farm');
   await P.getByLabel('Agreement / evidence reference').fill('E2E carbon-rights clause, participation agreement');
@@ -236,6 +250,7 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   // boundary computed by SQL Server from the farm polygons
   await P.getByRole('tab', { name: 'Boundary' }).click();
   await P.getByText('Project area').waitFor();
+  await show2d(P);
   await P.locator('path.leaflet-interactive').first().waitFor();
   await P.waitForTimeout(1200);
   phase3.areaText = await P.locator('dt:has-text("Project area") + dd').innerText();
@@ -382,6 +397,20 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await confirmReason(M, 'Submit', 'E2E: plan ready for approval');
   await M.getByText('Submitted', { exact: true }).first().waitFor();
   const planUrl = M.url();
+  // Double counting (14 Oct 2026): a farm ACTIVE in another open project blocks MRV planning (DOUBLE_COUNTING_CONFLICT). The E2E farm is
+  // also in a seeded DEMO project, so - as a project manager would - its participation there is ended before the plan is approved.
+  const myFarms = (await (await api.get(`${BASE}/api/v1/projects/${projectId}/farms`, { headers: pmH })).json()).map((pf) => pf.farm_id);
+  phase5.doubleCountingResolved = [];
+  for (const other of (await (await api.get(`${BASE}/api/v1/projects?page_size=100`, { headers: pmH })).json()).items ?? []) {
+    if (other.id === projectId || other.status === 'CLOSED') continue;
+    for (const pf of await (await api.get(`${BASE}/api/v1/projects/${other.id}/farms`, { headers: pmH })).json()) {
+      if (!myFarms.includes(pf.farm_id)) continue;
+      const r = await api.delete(`${BASE}/api/v1/projects/${other.id}/farms/${pf.farm_id}`,
+        { headers: pmH, data: { reason: 'E2E: the farm moves to the E2E pilot (no double counting)' } });
+      phase5.doubleCountingResolved.push(`${other.project_code} ${pf.farm_code}: ${r.status()}`);
+    }
+  }
+  console.log('double counting resolved:', phase5.doubleCountingResolved);
   const qa = await signIn('qa');
   await qa.page.goto(planUrl);
   await qa.page.getByTestId('approve-plan').click();
@@ -493,7 +522,12 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await qa.page.getByText('Approved', { exact: true }).first().waitFor();
   phase5.datasetApproved = true;
   await shot(qa.page, '49-mrv-dataset-approved');
-  phase5.periodStatus = (await json(await api.get(`${MRV}/monitoring-periods/${period.id}`, { headers: mrvH }))).status;
+  // the 'Approved' text can match before the approval request finishes: wait for the period itself (up to 10 s)
+  for (let i = 0; i < 20; i += 1) {
+    phase5.periodStatus = (await json(await api.get(`${MRV}/monitoring-periods/${period.id}`, { headers: mrvH }))).status;
+    if (phase5.periodStatus === 'APPROVED') break;
+    await qa.page.waitForTimeout(500);
+  }
   phase5.projectStatus = (await json(await api.get(`${BASE}/api/v1/projects/${projectId}`, { headers: pmH }))).status;
   phase5.audit = [...new Set((await json(await api.get(`${MRV}/projects/${projectId}/history`, { headers: mrvH }))).map((h) => h.action))].sort();
   await M.goto(`${BASE}/mrv/projects/${projectId}?tab=history`);
@@ -903,9 +937,9 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await CM.goto(`${BASE}/ledger`);
   await CM.getByTestId('ledger-demo-note').waitFor();
   phase9b.demoNote = (await CM.getByTestId('ledger-demo-note').innerText()).includes(LEDGER_DEMO);
-  const head9 = await CM.getByTestId('ledger-inventory').locator('thead').innerText();
+  const head9 = (await CM.getByTestId('ledger-inventory').locator('thead').innerText()).toLowerCase();   // headers are styled upper-case
   phase9b.columns = ['Issued (registry)', 'Available', 'Reserved', 'Pending transfer', 'Pending retirement', 'Transferred out', 'Retired']
-    .every((h) => head9.includes(h));
+    .every((h) => head9.includes(h.toLowerCase()));
   phase9b.ledgerEmpty = (await CM.getByTestId('no-ledger-batches').count()) === 1;
   await shot(CM, '97-ledger-demo');
   await cm.ctx.close();
@@ -1183,7 +1217,7 @@ ${EICAR}`) } } }));
   await qRow.waitFor();
   phase12b.quarantinePage = (await qRow.getByRole('button', { name: 'Release' }).count()) === 1;
   await qRow.locator('a').click();
-  await SE.getByTestId('scan-history').getByText('NOT_SCANNED').first().waitFor();
+  await SE.getByTestId('scan-history').getByText(/NOT[_ ]SCANNED/i).first().waitFor();
   phase12b.historyUi = true;
   await shot(SE, '9g-security-document-quarantine');
   await se.ctx.close();
@@ -1330,7 +1364,7 @@ ${EICAR}`) } } }));
     && w.receiptAllowed && w.newShipment === '409 ENGAGEMENT_NOT_ACTIVE' && w.retest === '409 ENGAGEMENT_NOT_ACTIVE'
     && w.newTestStart === '409 ENGAGEMENT_NOT_ACTIVE' && w.endAgain === '409 ENGAGEMENT_ENDED' && w.approvedStillVisible && !missingP6.length;
   const p7ok = phase7.readinessBlocker && phase7.labels && phase7.runBlocked && phase7.runLabel && /^CALC-\d{4}-\d{6}$/.test(phase7.runCode)
-    && phase7.runStatus === 'BLOCKED' && phase7.netResult === null && phase7.modules === 0 && phase7.projectStatus === 'MONITORING'
+    && phase7.runStatus === 'BLOCKED' && phase7.netResult === null && phase7.modules >= 1 && phase7.projectStatus === 'MONITORING'
     && phase7.qaCanRead && phase7.valueRefused && phase7.outsidersBlocked
     && ['CALCULATION_RUN_CREATED', 'CALCULATION_BLOCKED'].every((a) => phase7.audit.includes(a));
   const p8ok = phase8a.noReportForBlocked && /^CFND-\d{4}-\d{6}$/.test(phase8a.finding) && phase8a.category === 'Methodology Issue'

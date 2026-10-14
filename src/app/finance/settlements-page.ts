@@ -16,7 +16,7 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { FinanceApi } from './finance.api';
-import { Allocation, FinanceProject, Settlement, ShareVersion, Verify, finBadge, label, money, newKey } from './finance.models';
+import { Allocation, FinanceProject, FormKeys, Settlement, ShareVersion, Verify, finBadge, label, money } from './finance.models';
 import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
 
 /** Settlement runs: a frozen, hashed calculation of farmer entitlements for one project / period / currency from APPROVED configuration.
@@ -101,7 +101,9 @@ export class SettlementsPage {
   protected readonly detail = signal<Settlement | null>(null);
   protected readonly verified = signal<Verify | null>(null);
   protected readonly busy = signal(false);
-  protected f = { period: '', currency: 'INR', share: '', alloc: '' };
+  protected f = blankRun();
+  /** Same values -> same Idempotency-Key: a double click or retry replays on the server instead of creating a second run. */
+  private readonly keys = new FormKeys();
 
   protected select(p: FinanceProject): void {
     this.project.set(p);
@@ -130,23 +132,32 @@ export class SettlementsPage {
 
   protected create(): void {
     const p = this.project();
-    if (!p) return;
-    this.act(this.api.createSettlement({ project_id: p.id, monitoring_period_id: this.f.period, currency: this.f.currency.toUpperCase(),
-      revenue_share_version_id: this.f.share, allocation_version_id: this.f.alloc }, newKey()), 'Settlement run created.');
+    if (!p || this.busy()) return;
+    const body = { project_id: p.id, monitoring_period_id: this.f.period, currency: this.f.currency.trim().toUpperCase(),
+      revenue_share_version_id: this.f.share, allocation_version_id: this.f.alloc };
+    runAction(this.api.createSettlement(body, this.keys.for('run', body)), this.busy, this.notify, 'Settlement run created.', () => {
+      this.keys.reset('run');
+      this.f = blankRun();
+      this.reload();
+    });
   }
 
   protected calculate(r: Settlement): void {
-    runAction(this.api.calculate(r.id, newKey()), this.busy, this.notify, 'Calculated — inputs frozen.', (x) => { this.detail.set(x); this.reload(); });
+    runAction(this.api.calculate(r.id, this.keys.for(`calculate-${r.id}`, {})), this.busy, this.notify, 'Calculated — inputs frozen.',
+      (x) => { this.detail.set(x); this.reload(); });
   }
 
   protected act2(r: Settlement, action: 'submit' | 'approve'): void {
-    this.act(this.api.settlementAction(r.id, action, {}, newKey()), action === 'submit' ? 'Submitted for approval.' : 'Settlement approved.');
+    this.act(this.api.settlementAction(r.id, action, {}, this.keys.for(`${action}-${r.id}`, {})),
+      action === 'submit' ? 'Submitted for approval.' : 'Settlement approved.');
   }
 
   protected close(r: Settlement, action: 'reject' | 'cancel'): void {
     askReason(this.dialog, { title: `${action === 'reject' ? 'Reject' : 'Cancel'} ${r.run_code}?`, danger: true,
       confirmLabel: action === 'reject' ? 'Reject run' : 'Cancel run', message: 'Its revenue and costs become available to a new run.' })
-      .subscribe((x) => { if (x) this.act(this.api.settlementAction(r.id, action, { reason: x.reason }, newKey()), 'Run closed.'); });
+      .subscribe((x) => {
+        if (x) this.act(this.api.settlementAction(r.id, action, { reason: x.reason }, this.keys.for(`${action}-${r.id}`, x.reason)), 'Run closed.');
+      });
   }
 
   protected verify(r: Settlement): void {
@@ -156,4 +167,8 @@ export class SettlementsPage {
   protected payouts(r: Settlement): void {
     runAction(this.api.createPayouts(r.id), this.busy, this.notify, 'Payouts calculated — see Payouts.', () => this.reload());
   }
+}
+
+function blankRun() {
+  return { period: '', currency: 'INR', share: '', alloc: '' };
 }

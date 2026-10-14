@@ -86,7 +86,8 @@ import { ProjectsApi } from '../projects.api';
           }
           <mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Agreement / evidence reference</mat-label>
             <input matInput formControlName="reference" placeholder="e.g. carbon-rights clause of agreement AGR-…" /></mat-form-field>
-          <mat-form-field subscriptSizing="dynamic"><mat-label>Share % (optional)</mat-label><input matInput formControlName="share_pct" inputmode="decimal" /></mat-form-field>
+          <mat-form-field subscriptSizing="dynamic"><mat-label>Share % (optional)</mat-label><input matInput formControlName="share_pct" inputmode="decimal" />
+            <mat-error>More than 0 and at most 100, up to 3 decimals.</mat-error></mat-form-field>
           @if (selectedConflicts().length) {
             <div class="conflicts" role="alert">
               <strong>Conflicts to acknowledge (reviewed during eligibility review — not an automatic rejection):</strong>
@@ -140,7 +141,9 @@ export class ProjectFarmsPanel implements OnInit {
     holder_type: new FormControl<string>('FARMER', { nonNullable: true }),
     holder_name: new FormControl('', { nonNullable: true }),
     reference: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(200)] }),
-    share_pct: new FormControl('', { nonNullable: true, validators: [Validators.pattern(/^\d{1,3}(\.\d{1,3})?$/)] }),
+    // server: share_pct > 0 and <= 100, 3 decimals (CarbonRightIn)
+    share_pct: new FormControl('', { nonNullable: true,
+      validators: [Validators.pattern(/^\d{1,3}(\.\d{1,3})?$/), Validators.min(0.001), Validators.max(100)] }),
     acknowledge_conflicts: new FormControl(false, { nonNullable: true }),
     conflict_notes: new FormControl('', { nonNullable: true }),
   });

@@ -17,6 +17,14 @@ export class NotifyService {
     const fields = fieldSummary(e);
     this.snack.open(`${e.message || fallback}${fields}${ref}`, 'Dismiss', { duration: fields ? 12000 : 7000, panelClass: 'snack-error' });
   }
+
+  /** An error the user can try again from the toast itself (e.g. a failed sign-out): "<what failed> <server message>" + Retry. */
+  errorWithRetry(what: string, err: unknown, retry: () => void): void {
+    const e = err instanceof ApiError ? err : ApiError.from(err);
+    const ref = e.requestId ? ` (ref ${e.requestId.slice(0, 8)})` : '';
+    this.snack.open(`${what} ${e.message}${ref}`.trim(), 'Retry', { duration: 15000, panelClass: 'snack-error' })
+      .onAction().subscribe(retry);
+  }
 }
 
 /** " — Depth top cm: …; …" for a 422 with field errors, so the user can see which value the server refused (at most 3). */

@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { Observable, finalize, firstValueFrom, map, of, shareReplay, switchMap, tap } from 'rxjs';
+import { Observable, finalize, firstValueFrom, map, shareReplay, switchMap, tap } from 'rxjs';
 
 import { API_BASE } from '../api/api.service';
 import { Me, TokenResponse } from './auth.models';
@@ -81,12 +81,15 @@ export class AuthService {
       .pipe(switchMap(() => this.loadMe()));
   }
 
+  /**
+   * Ends the session on the server, which revokes it and deletes the httpOnly refresh cookie (the call needs only the cookie).
+   * Local state is cleared only once that succeeded: if the call fails the cookie survives and the next page load would sign the
+   * user straight back in, so the error is passed on for the caller to report (with a retry) and the user stays signed in.
+   */
   logout(): Observable<void> {
-    const call = this.token()
-      ? this.http.post(`${API_BASE}/auth/logout`, {}, { withCredentials: true }).pipe(map(() => undefined))
-      : of(undefined);
-    return call.pipe(
-      finalize(() => {
+    return this.http.post(`${API_BASE}/auth/logout`, {}, { withCredentials: true }).pipe(
+      map(() => undefined),
+      tap(() => {
         this.clear();
         void this.router.navigate(['/login']);
       }),

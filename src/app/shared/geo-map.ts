@@ -38,6 +38,16 @@ export interface MapPoint {
   color?: string;
 }
 
+/**
+ * Tooltip content that is always plain text. Leaflet writes string content with innerHTML, and labels carry user-entered names
+ * (farms, strata, imported zones / devices), so they are passed as an element whose textContent is the label.
+ */
+export function textTooltip(label: string): HTMLElement {
+  const el = document.createElement('span');
+  el.textContent = label;
+  return el;
+}
+
 /** True when the browser can create a WebGL context (needed by the 3D view). */
 export function supportsWebGl(): boolean {
   try {
@@ -64,6 +74,8 @@ export function supportsWebGl(): boolean {
         <app-geo-map-3d [layers]="layers()" [points]="points()" [drawing]="drawing()" [height]="height()" [center]="center()"
                         (failed)="fallBack($event)" />
         @if (drawing() !== null) { <div class="hint">3D is view-only — switch to 2D to add or change corners.</div> }
+      } @else if (noBasemap()) {
+        <div class="hint" data-testid="map-no-basemap">Background map unavailable — shapes are shown without it.</div>
       }
       @if (allow3d()) {
         <div class="mode" role="group" aria-label="Map view">
@@ -98,6 +110,8 @@ export class GeoMap implements OnInit, AfterViewInit, OnDestroy {
   readonly defaultMode = input<'2d' | '3d'>('3d');
   readonly mapClick = output<{ lat: number; lon: number }>();
   protected readonly mode = signal<'2d' | '3d'>('2d');
+  /** The map configuration could not be loaded (production never substitutes public tiles): say so instead of a blank map. */
+  protected readonly noBasemap = signal(false);
 
   private readonly host = viewChild.required<ElementRef<HTMLDivElement>>('host');
   private readonly clientConfig = inject(ClientConfigService);
@@ -128,7 +142,13 @@ export class GeoMap implements OnInit, AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.map = L.map(this.host().nativeElement, { zoomControl: true, attributionControl: true }).setView(this.center(), 13);
     // Basemap tiles come from server configuration (decision D6); the map works without them (shapes still draw).
-    this.clientConfig.config().subscribe((c) => this.addTiles(c.map));
+    this.clientConfig.config().subscribe({
+      next: (c) => this.addTiles(c.map),
+      error: (e: unknown) => {
+        console.warn('Map configuration unavailable, showing shapes without a basemap:', e);
+        this.noBasemap.set(true);
+      },
+    });
     this.group.addTo(this.map);
     this.drawGroup.addTo(this.map);
     this.map.on('click', (e: L.LeafletMouseEvent) => this.mapClick.emit({ lat: e.latlng.lat, lon: e.latlng.lng }));
@@ -176,7 +196,7 @@ export class GeoMap implements OnInit, AfterViewInit, OnDestroy {
         style: { color: l.color, weight: 2.5, dashArray: l.dashed ? '6 4' : undefined, fillOpacity: l.fillOpacity ?? 0.15,
           className: l.dashed ? 'cp-shape-dashed' : 'cp-shape', lineJoin: 'round' },
       });
-      if (l.label) shape.bindTooltip(l.label, { sticky: true });
+      if (l.label) shape.bindTooltip(textTooltip(l.label), { sticky: true });
       shape.addTo(this.group);
       if (!l.dashed) shape.eachLayer((x) => (x as L.Path).getElement?.()?.setAttribute('pathLength', '1'));
     }
@@ -185,7 +205,7 @@ export class GeoMap implements OnInit, AfterViewInit, OnDestroy {
       const icon = L.divIcon({ className: '', iconSize: [14, 14], iconAnchor: [7, 7],
         html: `<span class="cp-pin" style="--c:${(p.color ?? '#1565c0').replace(/[^#a-zA-Z0-9(),.%\s]/g, '')}"><i></i></span>` });
       const m = L.marker([p.lat, p.lon], { icon, keyboard: false });
-      if (p.label) m.bindTooltip(p.label, { direction: 'top', offset: [0, -8] });
+      if (p.label) m.bindTooltip(textTooltip(p.label), { direction: 'top', offset: [0, -8] });
       m.addTo(this.group);
     }
     const key = JSON.stringify(layers.map((l) => l.geojson)) + JSON.stringify(points);

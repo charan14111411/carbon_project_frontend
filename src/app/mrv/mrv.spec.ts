@@ -9,6 +9,7 @@ import { FieldDashboardPage } from './field-dashboard-page';
 import { MrvDashboardPage } from './mrv-dashboard-page';
 import { MrvDatasetPage } from './mrv-dataset-page';
 import { FieldCollection, Measurement, MonitoringRecord, Period, Plan, QaView, SamplingPoint, Stratum, capturableInMrv, collectionMissing, dataRoleLabel, mrvBadge, parseMeasurementValue } from './mrv.models';
+import { MrvEvidencePanel } from './panels/mrv-evidence-panel';
 import { MrvRecordsPanel } from './panels/mrv-records-panel';
 import { MrvStrataPanel } from './panels/mrv-strata-panel';
 
@@ -111,6 +112,28 @@ describe('MRV screens', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] });
     http = TestBed.inject(HttpTestingController);
+  });
+
+  it("evidence panel shows project- and farm-level evidence (no period) next to the selected period's evidence", async () => {
+    const f = TestBed.createComponent(MrvEvidencePanel);
+    f.componentRef.setInput('projectId', 'p1');
+    f.componentRef.setInput('period', { id: 'mp1', name: 'P1' } as Period);
+    f.detectChanges();
+    const req = http.expectOne((r) => r.url === '/api/v1/mrv/evidence');
+    expect(req.request.params.get('project_id')).toBe('p1');
+    expect(req.request.params.has('monitoring_period_id')).toBe(false);     // the server stores NULL for project / farm evidence
+    const ev = (id: string, period: string | null, entity: string, description: string) => ({ id, project_id: 'p1', monitoring_period_id: period,
+      entity_type: entity, entity_id: 'x', evidence_type: 'DOCUMENT', document_id: null, checksum_sha256: null, latitude: null, longitude: null,
+      captured_at: null, description, source: 'STAFF', status: 'ACTIVE', uploaded_by: null, uploaded_at: '2026-10-01T00:00:00Z' });
+    req.flush([ev('e1', null, 'PROJECT', 'Project deed'), ev('e2', null, 'FARM', 'Farm lease'), ev('e3', 'mp1', 'MONITORING_PERIOD', 'Period log'),
+      ev('e4', 'mp2', 'MONITORING_PERIOD', 'Other period')]);
+    await f.whenStable();
+    f.detectChanges();
+    const text = (f.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Project deed');
+    expect(text).toContain('Farm lease');
+    expect(text).toContain('Period log');
+    expect(text).not.toContain('Other period');
   });
 
   it('strata panel separates control sites and tracks the VM0042 control-site requirements', () => {
