@@ -13,7 +13,7 @@ import { ApiError } from '../core/api/api.models';
 import { AuthService } from '../core/auth/auth.service';
 import { P } from '../core/auth/permissions';
 import { NotifyService } from '../core/notify.service';
-import { applyServerErrors } from '../shared/forms';
+import { applyServerErrors, languageCode } from '../shared/forms';
 import { PageHeader } from '../shared/page-header';
 import { FarmersApi } from './farmers.api';
 
@@ -125,7 +125,7 @@ export class FarmerCreatePage implements OnInit {
     const blank = (s: string) => (s.trim() ? s.trim() : null);
     this.saving.set(true);
     this.api.create({
-      organization_id: v.organization_id, full_name: v.full_name.trim(), gender: v.gender, preferred_language: blank(v.preferred_language),
+      organization_id: v.organization_id, full_name: v.full_name.trim(), gender: v.gender, preferred_language: languageCode(v.preferred_language),
       primary_phone: blank(v.primary_phone), village: blank(v.village), sub_district: blank(v.sub_district), district: blank(v.district),
       state: blank(v.state), country: v.country.toUpperCase(),
     }).subscribe({

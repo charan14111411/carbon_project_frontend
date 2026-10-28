@@ -28,7 +28,7 @@ import { Sample, labBadge } from './lab.models';
     @for (s of samples(); track s.id) {
       <div class="sample">
         <div><strong class="mono">{{ s.sample_code }}</strong> <app-status-badge [status]="badge(s.status)" [text]="label(s.status)" />
-          <span class="small muted" data-testid="sample-depth"> · {{ depthText(s.depth_top_cm) }}–{{ depthText(s.depth_bottom_cm) }} cm</span>
+          <span class="small muted" [attr.data-testid]="'sample-depth-' + s.sample_code"> · {{ depthText(s.depth_top_cm) }}–{{ depthText(s.depth_bottom_cm) }} cm</span>
           <span class="small muted"> · {{ s.laboratory_org_name }} · {{ s.test_count }} test(s){{ s.seal_number ? ' · seal ' + s.seal_number : '' }}</span></div>
         @if (s.can_seal) {
           <p class="small">Write <strong class="mono">{{ s.sample_code }}</strong> on the container, then seal it.</p>

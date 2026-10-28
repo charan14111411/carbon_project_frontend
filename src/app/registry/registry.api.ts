@@ -38,7 +38,8 @@ export class RegistryApi {
   recordResponse = (id: string, body: Body): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/record-response`, body);
   withdraw = (id: string, body: Body): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/withdraw`, body);
   cancel = (id: string, reason: string): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/cancel`, { reason });
-  reconcile = (id: string, body: Body | null): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/reconcile`, body ?? {});
+  /** `null` (no body) asks an API adapter to query the registry; MANUAL accounts send ReconcileIn (outcome + evidence document). */
+  reconcile = (id: string, body: Body | null): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/reconcile`, body);
   recordIssuance = (submissionId: string, body: Body): Observable<Issuance> => this.api.post(`${this.b}/submissions/${submissionId}/issuances`, body);
   confirm = (id: string, note: string): Observable<Issuance> => this.api.post(`${this.b}/issuances/${id}/confirm`, { note });
   void = (id: string, reason: string): Observable<Issuance> => this.api.post(`${this.b}/issuances/${id}/void`, { reason });

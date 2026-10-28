@@ -5,7 +5,7 @@ import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { ApiError } from '../core/api/api.models';
 import { toParams } from '../core/api/api.service';
 import { fieldSummary } from '../core/notify.service';
-import { applyServerErrors, passwordPolicyProblem } from './forms';
+import { applyServerErrors, languageCode, passwordPolicyProblem } from './forms';
 import { generateTemporaryPassword } from './password';
 import { ReasonDialog } from './reason-dialog';
 import { StatusBadge } from './status-badge';
@@ -32,6 +32,14 @@ describe('applyServerErrors', () => {
     });
     expect(applyServerErrors(form, err)).toEqual(['unknown role']);
     expect(form.controls.email.getError('server')).toBe('not valid');
+  });
+});
+
+describe('languageCode', () => {
+  it('sends language codes lower-case (the API refuses "MR" or "en-IN") and blanks as null', () => {
+    expect(languageCode(' MR ')).toBe('mr');
+    expect(languageCode('en-IN')).toBe('en-in');
+    expect(languageCode('  ')).toBeNull();
   });
 });
 

@@ -16,6 +16,7 @@ import { Farm, Ownership } from '../farm.models';
 import { FarmsApi } from '../farms.api';
 
 const EVIDENCE_CATEGORIES = ['LAND_RECORD', 'LAND_TITLE', 'LEASE_AGREEMENT', 'OTHER'];
+const UNUSABLE_DOC_STATUSES = new Set(['QUARANTINED', 'ARCHIVED']);
 
 /** Who owns or holds rights to the land — recorded separately because the farmer may not be the owner. */
 @Component({
@@ -101,9 +102,12 @@ export class FarmOwnershipPanel implements OnInit {
     valid_from: new FormControl('', { nonNullable: true }),
     evidence_document_id: new FormControl<string | null>(null),
   });
-  /** Documents the server accepts as ownership evidence (land record, title, lease, other), newest land record first. */
+  /**
+   * Documents the server accepts as ownership evidence (land record, title, lease, other), newest land record first. Quarantined
+   * and archived documents (DocumentStatus: ACTIVE / QUARANTINED / ARCHIVED) cannot be evidence.
+   */
   protected readonly evidenceDocs = computed(() => (this.farm().documents ?? [])
-    .filter((d) => EVIDENCE_CATEGORIES.includes(d.category) && d.status !== 'DELETED')
+    .filter((d) => EVIDENCE_CATEGORIES.includes(d.category) && !UNUSABLE_DOC_STATUSES.has(d.status))
     .sort((a, b) => Number(b.category !== 'OTHER') - Number(a.category !== 'OTHER') || b.created_at.localeCompare(a.created_at)));
 
   constructor() {

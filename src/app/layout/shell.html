@@ -65,10 +65,17 @@
         <mat-divider />
         <a mat-menu-item routerLink="/profile"><mat-icon>person</mat-icon>My profile</a>
         <a mat-menu-item routerLink="/change-password"><mat-icon>key</mat-icon>Change password</a>
-        <button mat-menu-item type="button" (click)="signOut()"><mat-icon>logout</mat-icon>Sign out</button>
+        <button mat-menu-item type="button" (click)="signOut()" [disabled]="signingOut()"><mat-icon>logout</mat-icon>Sign out</button>
       </mat-menu>
     </mat-toolbar>
     <main class="content cp-content">
+      @if (signOutError(); as msg) {
+        <div class="signout-error" role="alert" data-testid="signout-error">
+          <span>Sign-out failed — you are still signed in on this device. {{ msg }}</span>
+          <button mat-flat-button type="button" [disabled]="signingOut()" (click)="signOut()">Retry sign-out</button>
+          <button mat-button type="button" (click)="signOutError.set(null)">Dismiss</button>
+        </div>
+      }
       <router-outlet />
     </main>
   </mat-sidenav-content>

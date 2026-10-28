@@ -20,6 +20,8 @@ import {
 } from './registry.models';
 
 interface BatchDraft { vintage: string; quantity: number | null; serialStart: string; serialEnd: string }
+/** Backend ReconcileIn.outcome: FOUND / NOT_FOUND resolve an unconfirmed submission, MATCH / MISMATCH compare issuances. */
+type ReconcileOutcome = 'FOUND' | 'NOT_FOUND' | 'MATCH' | 'MISMATCH';
 
 /** Registry workflow of one monitoring period (period records are authoritative). Every manual record needs the registry's reference and a
  *  PDF; issuances are confirmed by a second person. Calculated, VVB-stated and registry-issued quantities are never interchangeable. */
@@ -135,7 +137,11 @@ interface BatchDraft { vintage: string; quantity: number | null; serialStart: st
                   <mat-form-field subscriptSizing="dynamic"><mat-label>Registry submission reference</mat-label><input matInput [(ngModel)]="text['subref']" /></mat-form-field>
                   <label class="small">Registry receipt (PDF) <input type="file" accept="application/pdf" (change)="pick('receipt', $event)" /></label>
                   <button mat-flat-button type="button" [disabled]="busy() || !text['subref'] || !files['receipt']" (click)="recordSubmitted(d)">Record submitted</button>
-                  <button mat-button type="button" (click)="act(api.submit(d.id), 'Sent to the registry.')">Send via registry API</button>
+                  @if (isApi(d)) {
+                    <button mat-button type="button" [disabled]="busy()" (click)="act(api.submit(d.id), 'Sent to the registry.')" data-testid="send-api">Send via registry API</button>
+                  } @else {
+                    <span class="small muted">Manual registry account: submit at the registry, then record its reference and receipt here.</span>
+                  }
                 }
                 @if (d.status === 'DRAFT' || d.status === 'FROZEN') { <button mat-button type="button" (click)="cancel(d)">Cancel</button> }
                 @if (d.status === 'SUBMITTED') {
@@ -146,10 +152,28 @@ interface BatchDraft { vintage: string; quantity: number | null; serialStart: st
                   <button mat-flat-button type="button" [disabled]="busy() || !files['response'] || (outcome === 'REJECTED' && !text['reason'])" (click)="recordResponse(d)">Record response</button>
                   <button mat-button type="button" [disabled]="busy() || !text['reason']" (click)="recordQuery(d)">Record registry query</button>
                 }
-                @if (d.status === 'SUBMISSION_UNCONFIRMED' || d.status === 'SUBMITTED' || d.status === 'ACCEPTED') {
-                  <button mat-button type="button" (click)="act(api.reconcile(d.id, null), 'Reconciled with the registry.')">Reconcile (API)</button>
+                @if (isApi(d) && (d.status === 'SUBMISSION_UNCONFIRMED' || d.status === 'SUBMITTED' || d.status === 'ACCEPTED')) {
+                  <button mat-button type="button" [disabled]="busy()" (click)="act(api.reconcile(d.id, null), 'Reconciled with the registry.')"
+                    data-testid="reconcile-api">Reconcile (API)</button>
                 }
               </div>
+              @if (!isApi(d) && reconcileOutcomes(d).length) {
+                <!-- MANUAL accounts (ReconcileIn): what the registry says, with its evidence (REGISTRY_RESPONSE PDF) -->
+                <h4>Reconcile with the registry</h4>
+                <div class="row" data-testid="manual-reconcile">
+                  <mat-form-field subscriptSizing="dynamic"><mat-label>The registry shows</mat-label>
+                    <mat-select [(ngModel)]="rec.outcome" data-testid="rec-outcome">
+                      @for (o of reconcileOutcomes(d); track o.value) { <mat-option [value]="o.value">{{ o.label }}</mat-option> }
+                    </mat-select></mat-form-field>
+                  @if (rec.outcome === 'FOUND') {
+                    <mat-form-field subscriptSizing="dynamic"><mat-label>Registry submission reference</mat-label><input matInput [(ngModel)]="rec.external" /></mat-form-field>
+                  }
+                  <mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>{{ rec.outcome === 'MISMATCH' ? 'What differs' : 'Note (optional)' }}</mat-label>
+                    <input matInput [(ngModel)]="rec.note" /></mat-form-field>
+                  <label class="small">Registry evidence (PDF) <input type="file" accept="application/pdf" (change)="pick('reconcile', $event)" /></label>
+                  <button mat-flat-button type="button" [disabled]="busy() || !canReconcile(d)" (click)="reconcileManual(d)" data-testid="reconcile-manual">Record reconciliation</button>
+                </div>
+              }
               @if (d.status === 'ACCEPTED') {
                 <h4>Record a registry issuance</h4>
                 <div class="row">
@@ -237,6 +261,7 @@ export class RegistryPanel {
   protected submissionAccount = '';
   protected checklistItem = '';
   protected outcome: 'ACCEPTED' | 'REJECTED' = 'ACCEPTED';
+  protected rec: { outcome: ReconcileOutcome | ''; external: string; note: string } = { outcome: '', external: '', note: '' };
   protected iss: { external: string; date: string; unit: string; batches: BatchDraft[] } = { external: '', date: '', unit: '', batches: [this.batch()] };
 
   constructor() {
@@ -279,6 +304,41 @@ export class RegistryPanel {
 
   protected open(id: string): void {
     this.api.submission(id).subscribe((d) => this.detail.set(d));
+  }
+
+  /** Only API adapters can send or query; every other account (today: all — only a MANUAL adapter exists) is worked by hand. */
+  protected isApi(d: SubmissionDetail): boolean {
+    return this.accounts().find((a) => a.id === d.registry_account_id)?.adapter_mode === 'API';
+  }
+
+  /** Manual reconciliation the server accepts for this status (SUBMITTED is closed by "Record response" instead). */
+  protected reconcileOutcomes(d: SubmissionDetail): { value: ReconcileOutcome; label: string }[] {
+    if (d.status === 'SUBMISSION_UNCONFIRMED') {
+      return [{ value: 'FOUND', label: 'It has the submission' }, { value: 'NOT_FOUND', label: 'It has no such submission' }];
+    }
+    if (d.status === 'ACCEPTED') {
+      return [{ value: 'MATCH', label: 'Issuances match our records' }, { value: 'MISMATCH', label: 'Issuances differ' }];
+    }
+    return [];
+  }
+
+  protected canReconcile(d: SubmissionDetail): boolean {
+    const r = this.rec;
+    return this.reconcileOutcomes(d).some((o) => o.value === r.outcome) && !!this.files['reconcile']
+      && (r.outcome !== 'FOUND' || !!r.external.trim()) && (r.outcome !== 'MISMATCH' || !!r.note.trim());
+  }
+
+  protected reconcileManual(d: SubmissionDetail): void {
+    const r = this.rec;
+    if (this.busy() || !this.canReconcile(d) || !r.outcome) return;
+    const outcome = r.outcome;
+    runAction(this.withDoc(d.id, 'reconcile', 'REGISTRY_RESPONSE', (doc) => this.api.reconcile(d.id, { outcome, document_id: doc,
+      external_submission_id: outcome === 'FOUND' ? r.external.trim() : null, note: r.note.trim() || null })),
+    this.busy, this.notify, 'Reconciliation recorded.', () => {
+      this.rec = { outcome: '', external: '', note: '' };
+      this.files['reconcile'] = undefined;
+      this.reload();
+    });
   }
 
   protected pick(key: string, ev: Event): void {

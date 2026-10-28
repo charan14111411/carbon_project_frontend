@@ -2,6 +2,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -13,9 +14,11 @@ import { LonLat, formatArea, isKml, parseLatLonLines, polygonFromVertices, valid
 import { runAction } from '../../shared/run-action';
 import { Boundary, Farm, GeoGeometry, GeometryReport, Overlap } from '../farm.models';
 import { BoundarySaved, FarmsApi } from '../farms.api';
+import { FarmFutureImportResult, openFarmFutureImport } from './farmfuture-import-dialog';
 
 /**
- * Draw (tap/click corners), type / paste latitude-longitude corners, walk with GPS, or upload GeoJSON/KML. Every candidate is
+ * Draw (tap/click corners), type / paste latitude-longitude corners, walk with GPS, upload GeoJSON/KML, or import a mapped area
+ * from FarmFuture (found by the owner's mobile number). Every candidate is
  * validated by SQL Server (validity, orientation, area) before it can be saved; saving creates a new boundary version.
  */
 @Component({
@@ -29,13 +32,16 @@ import { BoundarySaved, FarmsApi } from '../farms.api';
         <div class="tools">
           <span class="muted small">Tap the map to add corners in order.</span>
           <button mat-stroked-button type="button" (click)="undo()" [disabled]="!vertices().length"><mat-icon>undo</mat-icon> Undo</button>
-          <button mat-stroked-button type="button" (click)="clear()" [disabled]="!vertices().length && !uploaded()"><mat-icon>clear</mat-icon> Clear</button>
+          <button mat-stroked-button type="button" (click)="clear()" [disabled]="!vertices().length && !uploaded() && !imported()"><mat-icon>clear</mat-icon> Clear</button>
           <button mat-stroked-button type="button" (click)="gps()" matTooltip="Add your current GPS position as the next corner (walk the boundary)">
             <mat-icon>my_location</mat-icon> GPS point</button>
           <input #file type="file" hidden accept=".geojson,.json,.kml" (change)="loadFile(file.files?.[0] ?? null); file.value = ''" />
           <button mat-stroked-button type="button" (click)="file.click()"><mat-icon>upload_file</mat-icon> GeoJSON / KML</button>
-          <button mat-flat-button type="button" (click)="validate()" [disabled]="busy() || (!candidate() && !uploaded())">Check boundary</button>
+          <button mat-stroked-button type="button" (click)="importFarmFuture()" data-testid="farmfuture-import"
+                  matTooltip="Find the owner's FarmFuture farms by mobile number and use a mapped area"><mat-icon>cloud_download</mat-icon> FarmFuture</button>
+          <button mat-flat-button type="button" (click)="validate()" [disabled]="busy() || (!candidate() && !uploaded() && !imported())">Check boundary</button>
         </div>
+        @if (imported(); as im) { <div class="note" data-testid="imported-label"><mat-icon inline>cloud_done</mat-icon> Imported: {{ im.label }}</div> }
         <div class="coords">
           <span class="muted small">Or enter corners as latitude / longitude (decimal degrees, WGS84), in order around the field.</span>
           <div class="coord-row">
@@ -106,9 +112,11 @@ export class BoundaryEditor implements OnInit {
   readonly saved = output<Farm>();
   private readonly api = inject(FarmsApi);
   private readonly notify = inject(NotifyService);
+  private readonly dialog = inject(MatDialog);
 
   protected readonly vertices = signal<LonLat[]>([]);
   protected readonly uploaded = signal<{ file: File; kml: boolean; text: string } | null>(null);
+  protected readonly imported = signal<FarmFutureImportResult | null>(null);
   protected readonly report = signal<GeometryReport | null>(null);
   protected readonly versions = signal<Boundary[]>([]);
   protected readonly busy = signal(false);
@@ -140,6 +148,7 @@ export class BoundaryEditor implements OnInit {
   add(p: { lat: number; lon: number }): void {
     if (!this.editable()) return;
     this.uploaded.set(null);
+    this.imported.set(null);
     this.report.set(null);
     this.vertices.update((v) => [...v, [p.lon, p.lat]]);
   }
@@ -166,6 +175,7 @@ export class BoundaryEditor implements OnInit {
     if (!this.editable() || !points.length) return;
     this.typed.set(true);
     this.uploaded.set(null);
+    this.imported.set(null);
     this.report.set(null);
     this.vertices.update((v) => [...v, ...points]);
     this.pasted.reset();
@@ -184,6 +194,7 @@ export class BoundaryEditor implements OnInit {
   clear(): void {
     this.vertices.set([]);
     this.uploaded.set(null);
+    this.imported.set(null);
     this.report.set(null);
     this.usedGps.set(false);
     this.typed.set(false);
@@ -209,15 +220,29 @@ export class BoundaryEditor implements OnInit {
     if (!file) return;
     file.text().then((text) => {
       this.vertices.set([]);
+      this.imported.set(null);
       this.uploaded.set({ file, kml: isKml(file.name, text), text });
+      this.validate();
+    });
+  }
+
+  importFarmFuture(): void {
+    openFarmFutureImport(this.dialog, { farmId: this.farm().id, farmerName: this.farm().farmer_name }).subscribe((r) => {
+      if (!r) return;
+      this.vertices.set([]);
+      this.uploaded.set(null);
+      this.imported.set(r);
       this.validate();
     });
   }
 
   validate(): void {
     const up = this.uploaded();
+    const im = this.imported();
     let body: { geojson?: object; kml?: string };
-    if (up) {
+    if (im) {
+      body = { geojson: im.geojson };
+    } else if (up) {
       try {
         body = up.kml ? { kml: up.text } : { geojson: JSON.parse(up.text) as object };
       } catch {
@@ -235,7 +260,9 @@ export class BoundaryEditor implements OnInit {
   save(): void {
     const up = this.uploaded();
     const id = this.farm().id;
-    const call = up ? this.api.uploadBoundary(id, up.file)
+    const im = this.imported();
+    const call = im ? this.api.saveBoundary(id, { geojson: im.geojson, source: 'IMPORT' })
+      : up ? this.api.uploadBoundary(id, up.file)
       // typed coordinates come from a survey / handheld GPS reading, so they are recorded as SURVEY
       : this.api.saveBoundary(id, { geojson: this.candidate()!, source: this.usedGps() ? 'GPS_WALK' : this.typed() ? 'SURVEY' : 'DRAWN' });
     runAction(call, this.busy, this.notify, 'Boundary saved as a new version.', (res: BoundarySaved) => {

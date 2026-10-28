@@ -14,6 +14,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { catchError, map, of, startWith, switchMap, timer } from 'rxjs';
 
+import { ApiError } from '../core/api/api.models';
 import { AuthService } from '../core/auth/auth.service';
 import { NAVIGATION, visibleNavigation } from '../core/navigation/nav.config';
 import { AppNotification, NotificationsApi } from '../core/notifications/notifications.api';
@@ -31,6 +32,9 @@ export class Shell implements OnInit {
   private readonly notificationsApi = inject(NotificationsApi);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  protected readonly signingOut = signal(false);
+  /** Why the last sign-out failed (shown inline with a retry; the shell stays free of the snack-bar module in the initial bundle). */
+  protected readonly signOutError = signal<string | null>(null);
   protected readonly unread = signal(0);
   protected readonly notifications = signal<AppNotification[]>([]);
   protected readonly isHandset = toSignal(
@@ -74,7 +78,20 @@ export class Shell implements OnInit {
     });
   }
 
+  /** A failed sign-out leaves the refresh cookie in place (a reload would sign straight back in): say so and offer a retry. */
   signOut(): void {
-    this.auth.logout().subscribe();
+    if (this.signingOut()) return;
+    this.signingOut.set(true);
+    this.auth.logout().subscribe({
+      next: () => {
+        this.signingOut.set(false);
+        this.signOutError.set(null);
+      },
+      error: (e: unknown) => {
+        this.signingOut.set(false);
+        const err = ApiError.from(e);
+        this.signOutError.set(`${err.message}${err.requestId ? ` (ref ${err.requestId.slice(0, 8)})` : ''}`);
+      },
+    });
   }
 }

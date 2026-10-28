@@ -177,12 +177,35 @@ export function marketBadge(status: string): string {
     ATTENTION_REQUIRED: 'FAILED' } as Record<string, string>)[status] ?? 'INFO';
 }
 
+/** ISO 4217 minor units of the currencies the server accepts (mirrors backend app/integrations/payment.py CURRENCY_EXPONENTS). */
+export const CURRENCY_EXPONENTS: Readonly<Record<string, number>> = {
+  INR: 2, USD: 2, EUR: 2, GBP: 2, CHF: 2, AUD: 2, CAD: 2, NZD: 2, SGD: 2, HKD: 2, AED: 2, SAR: 2, ZAR: 2,
+  BRL: 2, CNY: 2, SEK: 2, NOK: 2, DKK: 2, JPY: 0, KRW: 0, BHD: 3, KWD: 3, OMR: 3, JOD: 3,
+};
+
+/** Minor-unit decimals of a currency (2 for a code the table does not know — the server refuses those anyway). */
+export function currencyDecimals(currency: string): number {
+  return CURRENCY_EXPONENTS[currency.trim().toUpperCase()] ?? 2;
+}
+
+/**
+ * True if a typed amount has no more decimals than the currency's minor unit allows (server: money_ok — "12.50" and "12.500" are
+ * fine for INR, "12.505" is not), and at most the 4 decimals the API stores. `signed` allows a leading minus (cost corrections).
+ */
+export function fitsMinorUnits(amount: string, currency: string, signed = false): boolean {
+  const m = (signed ? /^-?\d+(?:\.(\d+))?$/ : /^\d+(?:\.(\d+))?$/).exec(amount.trim());
+  if (!m) return false;
+  const frac = m[1] ?? '';
+  return frac.length <= 4 && frac.replace(/0+$/, '').length <= currencyDecimals(currency);
+}
+
 /** Display a decimal money string with its currency (no float arithmetic — the server computes every amount). */
 export function money(amount: string | null | undefined, currency: string): string {
   if (amount === null || amount === undefined) return '—';
   const [whole, frac = ''] = amount.split('.');
   const trimmed = frac.replace(/0+$/, '');
-  const decimals = trimmed.length < 2 && currency !== 'JPY' && currency !== 'KRW' ? trimmed.padEnd(2, '0') : trimmed;
+  const minor = currencyDecimals(currency);           // 2 for INR, 0 for JPY / KRW, 3 for BHD / KWD / OMR / JOD
+  const decimals = trimmed.length < minor ? trimmed.padEnd(minor, '0') : trimmed;
   return `${whole}${decimals ? '.' + decimals : ''} ${currency}`;
 }
 

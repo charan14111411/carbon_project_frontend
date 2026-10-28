@@ -117,6 +117,33 @@ describe('Laboratory screens', () => {
     expect(el.textContent).not.toContain('Attach the PDF laboratory report');
   });
 
+  it('test page requires "Analysed at" before a result can be saved (an empty date never throws on save)', async () => {
+    const f = TestBed.createComponent(LabTestPage);
+    f.componentRef.setInput('id', 't1');
+    f.detectChanges();
+    http.expectOne('/api/v1/laboratory/tests/t1').flush(test());
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    const type = async (testId: string, value: string) => {
+      const input = el.querySelector<HTMLInputElement>(`[data-testid="${testId}"]`)!;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+    };
+    await type('result-value', '1.5');
+    await type('result-analysed-at', '');
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="save-result"]')?.disabled).toBe(true);
+    expect(el.textContent).toContain('Enter when the sample was analysed');
+    expect(() => (f.componentInstance as unknown as { save(): void }).save()).not.toThrow();
+    http.expectNone('/api/v1/laboratory/tests/t1/results');
+    await type('result-analysed-at', '2026-10-01T10:00:00');
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="save-result"]')?.disabled).toBe(false);
+    expect(el.textContent).not.toContain('Enter when the sample was analysed');
+  });
+
   it('test page shows CONFIGURATION_REQUIRED when the rule declares no unit', async () => {
     const f = TestBed.createComponent(LabTestPage);
     f.componentRef.setInput('id', 't1');

@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
@@ -16,7 +16,7 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { FinanceApi } from './finance.api';
-import { Cost, FinanceProject, Revenue, Summary, finBadge, label, money, newKey } from './finance.models';
+import { Cost, FinanceProject, FormKeys, Revenue, Summary, currencyDecimals, finBadge, fitsMinorUnits, label, money } from './finance.models';
 import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
 
 /** Recognized revenue (append-only, per order item, from Phase 10 records — never typed here), reversals of completed refunds, the
@@ -65,14 +65,28 @@ import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
         <div class="row">
           <mat-form-field subscriptSizing="dynamic"><mat-label>Category</mat-label><input matInput [(ngModel)]="c.category" /></mat-form-field>
           <mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Description</mat-label><input matInput [(ngModel)]="c.description" /></mat-form-field>
-          <mat-form-field subscriptSizing="dynamic"><mat-label>Amount actually incurred</mat-label><input matInput [(ngModel)]="c.amount" /></mat-form-field>
+          <mat-form-field subscriptSizing="dynamic"><mat-label>Amount actually incurred</mat-label>
+            <input matInput [(ngModel)]="c.amount" inputmode="decimal" data-testid="cost-amount" />
+            <mat-hint>At most {{ decimals(c.currency) }} decimals; negative = correction</mat-hint></mat-form-field>
           <mat-form-field subscriptSizing="dynamic"><mat-label>Currency</mat-label><input matInput maxlength="3" [(ngModel)]="c.currency" /></mat-form-field>
           <mat-form-field subscriptSizing="dynamic"><mat-label>Incurred on</mat-label><input matInput type="date" [(ngModel)]="c.incurred_on" /></mat-form-field>
           <mat-form-field subscriptSizing="dynamic"><mat-label>Period (optional)</mat-label>
             <mat-select [(ngModel)]="c.period"><mat-option value="">Any period</mat-option>@for (m of project()!.periods; track m.id) {
               <mat-option [value]="m.id">Period {{ m.period_number }}</mat-option> }</mat-select></mat-form-field>
         </div>
-        <button mat-flat-button type="button" [disabled]="busy() || !costValid()" (click)="record()">Record cost</button>
+        @if (isCorrection()) {
+          <!-- a negative amount corrects an approved cost of this project (server: corrects_cost_id, CORRECTION_TARGET_REQUIRED) -->
+          <div class="row">
+            <mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Corrects approved cost</mat-label>
+              <mat-select [(ngModel)]="c.corrects" (ngModelChange)="pickCorrected($event)" data-testid="cost-corrects">
+                @for (x of correctable(); track x.id) {
+                  <mat-option [value]="x.id">{{ x.cost_code }} · {{ x.category }} · {{ money(x.amount, x.currency) }} · {{ x.incurred_on }}</mat-option>
+                }</mat-select>
+              @if (!correctable().length) { <mat-hint>No approved cost in this project to correct.</mat-hint> }
+            </mat-form-field>
+          </div>
+        }
+        <button mat-flat-button type="button" [disabled]="busy() || !costValid()" (click)="record()" data-testid="record-cost">Record cost</button>
         <span class="small muted"> Approval needs a PDF of the evidence and a different person.</span>
       </section>
     }
@@ -110,10 +124,15 @@ export class RevenuePage {
   protected readonly revenue = signal<Revenue[]>([]);
   protected readonly costs = signal<Cost[]>([]);
   protected readonly busy = signal(false);
-  protected c = { category: '', description: '', amount: '', currency: 'INR', incurred_on: '', period: '' };
+  protected readonly decimals = currencyDecimals;
+  /** Approved, positive costs of the project: the ones a negative amount can correct. */
+  protected readonly correctable = computed(() => this.costs().filter((x) => x.status === 'APPROVED' && !x.amount.trim().startsWith('-')));
+  protected c = blankCost();
+  private readonly keys = new FormKeys();
 
   protected select(p: FinanceProject): void {
     this.project.set(p);
+    this.c = blankCost();
     this.reload();
   }
 
@@ -129,17 +148,36 @@ export class RevenuePage {
     runAction(obs, this.busy, this.notify, message, () => this.reload());
   }
 
+  protected isCorrection(): boolean {
+    return this.c.amount.trim().startsWith('-');
+  }
+
   protected costValid(): boolean {
-    return !!(this.c.category.trim() && this.c.description.trim().length >= 3 && /^-?\d+(\.\d{1,4})?$/.test(this.c.amount.trim())
-      && /^[A-Za-z]{3}$/.test(this.c.currency) && this.c.incurred_on);
+    const c = this.c;
+    return !!(c.category.trim() && c.description.trim().length >= 3 && fitsMinorUnits(c.amount, c.currency, true) && Number(c.amount) !== 0
+      && /^[A-Za-z]{3}$/.test(c.currency.trim()) && c.incurred_on && (!this.isCorrection() || c.corrects));
+  }
+
+  /** A correction is in the corrected cost's currency. */
+  protected pickCorrected(id: string): void {
+    const target = this.costs().find((x) => x.id === id);
+    if (target) this.c.currency = target.currency;
   }
 
   protected record(): void {
     const p = this.project();
-    if (!p) return;
-    this.act(this.api.createCost({ project_id: p.id, monitoring_period_id: this.c.period || null, category: this.c.category,
-      description: this.c.description, amount: this.c.amount.trim(), currency: this.c.currency.toUpperCase(), incurred_on: this.c.incurred_on },
-    newKey()), 'Cost recorded — attach its evidence for approval.');
+    if (!p || this.busy() || !this.costValid()) return;
+    const c = this.c;
+    const body = { project_id: p.id, monitoring_period_id: c.period || null, category: c.category.trim(), description: c.description.trim(),
+      amount: c.amount.trim(), currency: c.currency.trim().toUpperCase(), incurred_on: c.incurred_on,
+      corrects_cost_id: this.isCorrection() ? c.corrects : null };
+    // Same values → same Idempotency-Key, so a double click or a retry replays instead of recording the cost twice.
+    runAction(this.api.createCost(body, this.keys.for('cost', body)), this.busy, this.notify, 'Cost recorded — attach its evidence for approval.',
+      () => {
+        this.keys.reset('cost');
+        this.c = blankCost();
+        this.reload();
+      });
   }
 
   protected evidence(x: Cost, ev: Event): void {
@@ -148,11 +186,15 @@ export class RevenuePage {
   }
 
   protected approve(x: Cost): void {
-    this.act(this.api.approveCost(x.id, newKey()), 'Cost approved.');
+    this.act(this.api.approveCost(x.id, this.keys.for('approve-' + x.id, {})), 'Cost approved.');
   }
 
   protected reject(x: Cost): void {
     askReason(this.dialog, { title: `Reject ${x.cost_code}?`, confirmLabel: 'Reject cost', danger: true })
-      .subscribe((r) => { if (r) this.act(this.api.rejectCost(x.id, r.reason, newKey()), 'Cost rejected.'); });
+      .subscribe((r) => { if (r) this.act(this.api.rejectCost(x.id, r.reason, this.keys.for('reject-' + x.id, r.reason)), 'Cost rejected.'); });
   }
+}
+
+function blankCost() {
+  return { category: '', description: '', amount: '', currency: 'INR', incurred_on: '', period: '', corrects: '' };
 }

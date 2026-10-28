@@ -83,8 +83,13 @@ export class MrvEvidencePanel {
     effect(() => this.load(this.periodId()));
   }
 
+  /**
+   * Project- and farm-level evidence has no monitoring period (stored NULL), so filtering the API by period would hide it. Load the
+   * project's evidence once and keep, for a selected period, that period's evidence plus the unscoped (project / farm) evidence.
+   */
   private load(periodId: string | null): void {
-    this.api.evidence({ project_id: this.projectId(), monitoring_period_id: periodId }).subscribe((e) => this.items.set(e));
+    this.api.evidence({ project_id: this.projectId() }).subscribe((all) =>
+      this.items.set(periodId ? all.filter((e) => e.monitoring_period_id === periodId || e.monitoring_period_id === null) : all));
   }
 
   protected farmCode(id: string): string {

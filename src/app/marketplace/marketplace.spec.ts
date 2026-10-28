@@ -8,7 +8,7 @@ import { AuthService } from '../core/auth/auth.service';
 import { NAVIGATION, visibleNavigation } from '../core/navigation/nav.config';
 import { KycReviewPage } from './kyc-review-page';
 import { MarketplaceApi } from './marketplace.api';
-import { DEMO_NOTE, BuyerProfile, Listing, Order, marketBadge, money } from './marketplace.models';
+import { DEMO_NOTE, BuyerProfile, Listing, Order, fitsMinorUnits, marketBadge, money } from './marketplace.models';
 import { MarketplacePage } from './marketplace-page';
 import { OrdersPage } from './orders-page';
 
@@ -38,6 +38,14 @@ describe('Marketplace helpers and navigation', () => {
     expect(money('12.5000', 'INR')).toBe('12.50 INR');
     expect(money('100.0000', 'JPY')).toBe('100 JPY');
     expect(money('0.1250', 'BHD')).toBe('0.125 BHD');
+    expect(money('1.5000', 'KWD')).toBe('1.500 KWD');                 // 3-decimal currencies show all three decimals
+    expect(fitsMinorUnits('12.50', 'INR')).toBe(true);
+    expect(fitsMinorUnits('12.500', 'INR')).toBe(true);               // trailing zeros are fine (server: money_ok)
+    expect(fitsMinorUnits('12.505', 'INR')).toBe(false);
+    expect(fitsMinorUnits('1.505', 'BHD')).toBe(true);
+    expect(fitsMinorUnits('100.5', 'JPY')).toBe(false);
+    expect(fitsMinorUnits('-5.25', 'INR')).toBe(false);
+    expect(fitsMinorUnits('-5.25', 'INR', true)).toBe(true);
     expect(marketBadge('KYC_VERIFIED')).toBe('ACTIVE');
     expect(marketBadge('ATTENTION_REQUIRED')).toBe('FAILED');
     expect(DEMO_NOTE).toBe('DEMO — no registry-issued credits; nothing is listed');
@@ -110,6 +118,37 @@ describe('Marketplace screens', () => {
     expect(el.querySelector('[data-testid="pay-form"]')?.textContent).toContain('1250.00 INR');
     expect([...el.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Confirm receipt');
     expect(el.textContent).toContain('not a tax invoice');
+  });
+
+  it('registry delivery completes only with the registry reference and evidence PDF (never an empty body)', async () => {
+    signIn(['orders.read', 'credits.confirm']);
+    const f = TestBed.createComponent(OrdersPage);
+    f.detectChanges();
+    http.expectOne((r) => r.url === '/api/v1/orders').flush({ orders: [], demo_note: null });
+    f.componentInstance.open('o1');
+    const item = { id: 'i1', item_code: 'ITM-1', listing_id: 'l1', listing_code: 'LST-1', batch_id: 'b1', batch_code: 'CB-1', vintage: '2026',
+      project_code: 'PRJ-1', quantity: 100, unit_price: '12.5000', line_total: '1250.0000', status: 'TRANSFER_PENDING' as const,
+      reservation_code: 'RSV-1', reservation_status: 'CONSUMED', transfer_id: 't1', transfer_code: 'TRF-1', transfer_status: 'REQUESTED',
+      can_complete: true };
+    http.expectOne('/api/v1/orders/o1').flush(order({ status: 'TRANSFER_PENDING', transfer_kind: 'REGISTRY', recipient_registry_account: 'ACC-9',
+      viewer_side: 'SELLER', can_pay: false, can_cancel: false, items: [item] }));
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    const button = el.querySelector<HTMLButtonElement>('[data-testid="complete-ITM-1"]');
+    expect(button?.disabled).toBe(true);                             // nothing to send yet
+    const cmp = f.componentInstance as unknown as { tref: Record<string, string>; tdoc: Record<string, File | undefined>; complete(o: Order, it: typeof item): void;
+      sel(): Order | null };
+    cmp.tref['t1'] = 'REG-TX-42';
+    cmp.tdoc['t1'] = new File(['%PDF'], 'evidence.pdf', { type: 'application/pdf' });
+    cmp.complete(cmp.sel()!, item);
+    http.expectOne('/api/v1/credits/transfers/t1/documents').flush({ document_id: 'd9', category: 'REGISTRY_TRANSFER_EVIDENCE', title: null,
+      file_name: null, sha256: null, uploaded_at: null });
+    const done = http.expectOne('/api/v1/orders/transfers/t1/complete');
+    expect(done.request.body).toEqual({ registry_transfer_reference: 'REG-TX-42', document_id: 'd9' });
+    done.flush(order({ status: 'COMPLETED', transfer_kind: 'REGISTRY' }));
+    http.expectOne((r) => r.url === '/api/v1/orders').flush({ orders: [], demo_note: null });
+    http.expectOne('/api/v1/orders/o1').flush(order({ status: 'COMPLETED', transfer_kind: 'REGISTRY' }));
   });
 
   it('KYC review offers decisions only when the API allows them (never on your own submission)', async () => {

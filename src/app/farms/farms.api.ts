@@ -10,6 +10,8 @@ import {
   ExternalFetchKind,
   ExternalObservation,
   Farm,
+  FarmFutureAreas,
+  FarmFutureEstates,
   FarmStatus,
   FarmSummary,
   GeoGeometry,
@@ -78,5 +80,9 @@ export class FarmsApi {
   externalData = (id: string): Observable<ExternalDataView> => this.api.get(`${this.base}/${id}/external-data`);
   fetchExternalData = (id: string, kind: ExternalFetchKind, period: { period_start: string | null; period_end: string | null }):
     Observable<ExternalObservation> => this.api.post(`${this.base}/${id}/external-data/${kind}`, period);
+  farmFutureEstates = (id: string, phone: string | null): Observable<FarmFutureEstates> =>
+    this.api.post(`${this.base}/${id}/farmfuture/estates`, { phone_number: phone });
+  farmFutureAreas = (id: string, farmFutureFarmId: string, phone: string | null): Observable<FarmFutureAreas> =>
+    this.api.post(`${this.base}/${id}/farmfuture/farms/${farmFutureFarmId}/areas`, { phone_number: phone });
   transition = (id: string, endpoint: string, reason: string): Observable<Farm> => this.api.post(`${this.base}/${id}/${endpoint}`, { reason });
 }

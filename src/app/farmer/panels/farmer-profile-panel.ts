@@ -10,6 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 
 import { NotifyService } from '../../core/notify.service';
+import { languageCode } from '../../shared/forms';
 import { askReason } from '../../shared/reason-dialog';
 import { runAction } from '../../shared/run-action';
 import { Farmer, label } from '../farmer.models';
@@ -120,7 +121,7 @@ export class FarmerProfilePanel implements OnChanges {
     const changes: Record<string, string | null> = {};
     for (const [k, v] of Object.entries(raw)) {
       const ctrl = this.form.get(k);
-      if (ctrl?.dirty && ctrl.enabled) changes[k] = v.trim() || null;
+      if (ctrl?.dirty && ctrl.enabled) changes[k] = k === 'preferred_language' ? languageCode(v) : v.trim() || null;
     }
     runAction(this.api.update(this.farmer().id, changes), this.busy, this.notify, 'Profile saved.', (f) => this.changed.emit(f));
   }
