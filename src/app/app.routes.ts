@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard, guestGuard, passwordChangedGuard, permissionGuard } from './core/auth/guards';
+import { adminIndexGuard, authGuard, guestGuard, passwordChangedGuard, permissionGuard } from './core/auth/guards';
 import { P } from './core/auth/permissions';
 import { Shell } from './layout/shell';
 import { ForbiddenPage, NotFoundPage } from './shared/simple-pages';
@@ -24,10 +24,15 @@ export const routes: Routes = [
       { path: 'profile', title: 'My profile', loadComponent: () => import('./auth/profile-page').then((m) => m.ProfilePage) },
       {
         path: 'farmers',
-        canActivate: [permissionGuard],
-        data: { anyPermissions: [P.FARMERS_READ, P.FARMERS_SELF] },
         children: [
-          { path: '', title: 'Farmers', loadComponent: () => import('./farmer/farmers-list-page').then((m) => m.FarmersListPage) },
+          // The staff list needs farmers.read; a farmer (farmers.self) only ever opens their own record (:id, also /me/farmer).
+          {
+            path: '',
+            title: 'Farmers',
+            canActivate: [permissionGuard],
+            data: { permissions: [P.FARMERS_READ] },
+            loadComponent: () => import('./farmer/farmers-list-page').then((m) => m.FarmersListPage),
+          },
           {
             path: 'new',
             title: 'Register farmer',
@@ -35,7 +40,13 @@ export const routes: Routes = [
             data: { permissions: [P.FARMERS_MANAGE] },
             loadComponent: () => import('./farmer/farmer-create-page').then((m) => m.FarmerCreatePage),
           },
-          { path: ':id', title: 'Farmer', loadComponent: () => import('./farmer/farmer-detail-page').then((m) => m.FarmerDetailPage) },
+          {
+            path: ':id',
+            title: 'Farmer',
+            canActivate: [permissionGuard],
+            data: { anyPermissions: [P.FARMERS_READ, P.FARMERS_SELF] },
+            loadComponent: () => import('./farmer/farmer-detail-page').then((m) => m.FarmerDetailPage),
+          },
         ],
       },
       {
@@ -304,6 +315,7 @@ export const routes: Routes = [
       {
         path: 'admin',
         children: [
+          { path: '', pathMatch: 'full', canActivate: [adminIndexGuard], children: [] },
           {
             path: 'users',
             canActivate: [permissionGuard],

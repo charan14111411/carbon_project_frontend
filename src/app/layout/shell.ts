@@ -12,12 +12,21 @@ import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { catchError, map, of, startWith, switchMap, timer } from 'rxjs';
+import { catchError, map, of, switchMap, timer } from 'rxjs';
 
 import { ApiError } from '../core/api/api.models';
 import { AuthService } from '../core/auth/auth.service';
 import { NAVIGATION, visibleNavigation } from '../core/navigation/nav.config';
 import { AppNotification, NotificationsApi } from '../core/notifications/notifications.api';
+
+/**
+ * A notification link comes from the server: follow it only when it is an in-app path ("/projects/…"). Anything else (an absolute or
+ * protocol-relative URL, "/\host", a scheme such as "javascript:", backslashes, control characters) is ignored.
+ */
+export function internalLink(link: string | null | undefined): string | null {
+  if (!link || !link.startsWith('/') || link.startsWith('//')) return null;
+  return /[\u0000-\u001f\u007f\\]/.test(link) ? null : link;
+}
 
 @Component({
   selector: 'app-shell',
@@ -37,6 +46,8 @@ export class Shell implements OnInit {
   protected readonly signOutError = signal<string | null>(null);
   protected readonly unread = signal(0);
   protected readonly notifications = signal<AppNotification[]>([]);
+  /** The notification list (or a mark-read) failed: said in the menu instead of an empty "No notifications". */
+  protected readonly notificationsError = signal<string | null>(null);
   protected readonly isHandset = toSignal(
     inject(BreakpointObserver).observe('(max-width: 900px)').pipe(map((r) => r.matches)),
     { initialValue: false },
@@ -63,18 +74,26 @@ export class Shell implements OnInit {
   }
 
   openNotifications(): void {
-    this.notificationsApi.list().pipe(startWith(null)).subscribe((p) => p && this.notifications.set(p.items));
+    this.notificationsError.set(null);
+    this.notificationsApi.list().subscribe({
+      next: (p) => this.notifications.set(p.items),
+      error: (e: unknown) => this.notificationsError.set(`Notifications could not be loaded: ${ApiError.from(e).message}`),
+    });
   }
 
   openNotification(n: AppNotification): void {
-    if (!n.read_at) this.notificationsApi.markRead(n.id).subscribe(() => this.unread.update((u) => Math.max(0, u - 1)));
-    if (n.link) void this.router.navigateByUrl(n.link);
+    if (!n.read_at) this.notificationsApi.markRead(n.id).subscribe({ next: () => this.unread.update((u) => Math.max(0, u - 1)), error: () => undefined });
+    const link = internalLink(n.link);
+    if (link) void this.router.navigateByUrl(link);
   }
 
   markAllRead(): void {
-    this.notificationsApi.markAll().subscribe(() => {
-      this.unread.set(0);
-      this.notifications.update((list) => list.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
+    this.notificationsApi.markAll().subscribe({
+      next: () => {
+        this.unread.set(0);
+        this.notifications.update((list) => list.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
+      },
+      error: (e: unknown) => this.notificationsError.set(`Could not mark all read: ${ApiError.from(e).message}`),
     });
   }
 

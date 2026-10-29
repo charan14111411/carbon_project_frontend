@@ -10,6 +10,7 @@ import { MrvCalculationsPanel } from '../mrv/panels/mrv-calculations-panel';
 import { Period } from '../mrv/mrv.models';
 import { CalculationApi } from './calculation.api';
 import { CalculationRunPage } from './calculation-run-page';
+import { CalculationsPage } from './calculations-page';
 import { CALCULATED_LABEL, CalcRun, DEMO_LABEL, Readiness, blockerTitle, calcBadge, formatValue } from './calculation.models';
 
 const STEPS = ['BASELINE', 'PROJECT', 'EMISSIONS', 'REMOVALS', 'LEAKAGE', 'UNCERTAINTY', 'ADJUSTMENT', 'NET'];
@@ -134,5 +135,60 @@ describe('Calculation screens', () => {
       expect(el.querySelector('input[name="net_result"], [data-testid="net-input"]')).toBeNull();
       f.destroy();
     }
+  });
+});
+
+describe('Calculations of a CLOSED project and failed reads', () => {
+  let http: HttpTestingController;
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] });
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  const readiness = (status: string): Readiness => ({ project_id: 'p1', project_code: 'PRJ-1', project_status: status, environment: 'LIVE',
+    monitoring_period_id: 'mp1', monitoring_period: 'Monitoring 1 (#1)', methodology_label: 'M v1', is_demo_illustrative: false, module_code: null,
+    module_version: null, module_readiness: null, dataset_id: null, dataset_code: null, dataset_status: null, ready: false, blockers: [],
+    warnings: [], steps: [], input_rows: 0, calculation_rules: [] });
+
+  it.each([['MONITORING', true], ['CLOSED', false]])('a %s project is listed; "New calculation run" offered: %s', async (status, offered) => {
+    signIn(['calculation.read', 'calculation.manage']);
+    const f = TestBed.createComponent(CalculationsPage);
+    f.detectChanges();
+    http.expectOne('/api/v1/calculations/projects').flush([{ id: 'p1', project_code: 'PRJ-1', name: 'Pilot', status, environment: 'LIVE',
+      periods: [{ id: 'mp1', name: 'Monitoring 1', period_number: 1, status: 'APPROVED', start_date: '2026-01-01', end_date: '2026-06-30' }] }]);
+    await f.whenStable();
+    f.detectChanges();
+    http.expectOne((r) => r.url === '/api/v1/calculations/projects/p1/readiness').flush(readiness(status));
+    http.expectOne((r) => r.url === '/api/v1/calculations/runs').flush([]);
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="calc-project"]')?.textContent ?? '').not.toContain('No project');
+    expect(!!el.querySelector('[data-testid="create-run"]')).toBe(offered);
+    expect(!!el.querySelector('[data-testid="closed-note"]')).toBe(!offered);
+  });
+
+  it('a failed project list shows the error, not "No project ... yet"', async () => {
+    signIn(['calculation.read']);
+    const f = TestBed.createComponent(CalculationsPage);
+    f.detectChanges();
+    http.expectOne('/api/v1/calculations/projects').flush({}, { status: 500, statusText: 'Error' });
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[role="alert"]')).not.toBeNull();
+    expect(el.textContent).not.toContain('No project of your organization');
+  });
+
+  it('run page: a failed read of the inputs is shown instead of an empty table', async () => {
+    signIn(['calculation.read']);
+    const f = TestBed.createComponent(CalculationRunPage);
+    f.componentRef.setInput('id', 'r1');
+    f.detectChanges();
+    http.expectOne('/api/v1/calculations/runs/r1').flush(run());
+    http.expectOne('/api/v1/calculations/runs/r1/inputs').flush({}, { status: 500, statusText: 'Error' });
+    await f.whenStable();
+    f.detectChanges();
+    expect((f.nativeElement as HTMLElement).querySelector('[role="alert"]')).not.toBeNull();
   });
 });

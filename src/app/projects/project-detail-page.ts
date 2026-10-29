@@ -1,11 +1,9 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatTabsModule } from '@angular/material/tabs';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { map } from 'rxjs';
+import { RouterLink } from '@angular/router';
 
 import { ApiError } from '../core/api/api.models';
 import { AuthService } from '../core/auth/auth.service';
@@ -22,6 +20,7 @@ import { reloadOn } from '../shared/reload-on';
 import { runAction } from '../shared/run-action';
 import { StateView } from '../shared/state-view';
 import { StatusBadge } from '../shared/status-badge';
+import { urlTab } from '../shared/url-tab';
 import { ProjectBoundaryPanel } from './panels/project-boundary-panel';
 import { ProjectFarmsPanel } from './panels/project-farms-panel';
 import { ProjectHistoryPanel } from './panels/project-history-panel';
@@ -60,7 +59,7 @@ const TAB_ONLY: ProjectStatus[] = ['METHODOLOGY_REVIEW', 'METHODOLOGY_CONFIRMED'
         <app-status-badge status="INFO" [text]="'Methodology: ' + label(p.methodology_status)" />
         @if (p.environment === 'DEMO') { <app-status-badge status="DEMO" /> }
       </div>
-      <mat-tab-group animationDuration="0ms" mat-stretch-tabs="false" [selectedIndex]="tab()" (selectedIndexChange)="tab.set($event)">
+      <mat-tab-group animationDuration="0ms" mat-stretch-tabs="false" [selectedIndex]="tab.index()" (selectedIndexChange)="tab.select($event)">
         <mat-tab label="Overview">
           <ng-template matTabContent>
             <div class="tab-body overview">
@@ -132,7 +131,6 @@ export class ProjectDetailPage {
   private readonly api = inject(ProjectsApi);
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
-  private readonly route = inject(ActivatedRoute);
   protected readonly canMrv = inject(AuthService).has(P.MRV_READ);
   protected readonly label = label;
   protected readonly badge = projectBadge;
@@ -144,8 +142,7 @@ export class ProjectDetailPage {
   protected readonly loading = signal(true);
   protected readonly error = signal<ApiError | null>(null);
   protected readonly busy = signal(false);
-  protected readonly tab = signal(0);
-  private readonly tabParam = toSignal(this.route.queryParamMap.pipe(map((q) => q.get('tab'))));
+  protected readonly tab = urlTab(() => TABS);
   protected readonly uploadFn: UploadFn = (file, category, title) => this.api.uploadDocument(this.id(), file, category, title);
   protected readonly actions = computed(() => {
     const p = this.project();
@@ -168,7 +165,6 @@ export class ProjectDetailPage {
       this.loading.set(true);
       this.load();
     });
-    reloadOn(() => [this.id(), this.tabParam()], () => this.tab.set(Math.max(0, TABS.indexOf(this.tabParam() ?? 'overview'))));
   }
 
   load(): void {

@@ -1,10 +1,11 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { ApplicationConfig, inject, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, ErrorHandler, inject, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { MAT_BUTTON_TOGGLE_DEFAULT_OPTIONS } from '@angular/material/button-toggle';
 import { MAT_FORM_FIELD_DEFAULT_OPTIONS } from '@angular/material/form-field';
 import { TitleStrategy, provideRouter, withComponentInputBinding, withInMemoryScrolling, withViewTransitions } from '@angular/router';
 
 import { routes } from './app.routes';
+import { AppErrorHandler } from './core/app-error-handler';
 import { AuthService } from './core/auth/auth.service';
 import { authInterceptor, errorInterceptor } from './core/http/interceptors';
 import { AppTitleStrategy } from './core/title.strategy';
@@ -12,6 +13,8 @@ import { AppTitleStrategy } from './core/title.strategy';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
+    // A read without its own error handling still tells the user it failed (instead of looking like "no data").
+    { provide: ErrorHandler, useClass: AppErrorHandler },
     // View transitions: the content area cross-fades on navigation (styles.scss, skipped for prefers-reduced-motion and old browsers).
     provideRouter(routes, withComponentInputBinding(), withInMemoryScrolling({ scrollPositionRestoration: 'top' }),
       withViewTransitions({ skipInitialTransition: true })),

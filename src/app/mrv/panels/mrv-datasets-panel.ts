@@ -14,6 +14,7 @@ import { runAction } from '../../shared/run-action';
 import { StatusBadge } from '../../shared/status-badge';
 import { MrvApi } from '../mrv.api';
 import { Dataset, Period, mrvBadge } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 /** Versioned MRV datasets (one per period version). Approved datasets are immutable; corrections create a new version. */
 @Component({
@@ -57,7 +58,7 @@ export class MrvDatasetsPanel implements OnInit {
   readonly changed = output<void>();
   private readonly api = inject(MrvApi);
   private readonly notify = inject(NotifyService);
-  protected readonly canManage = inject(AuthService).has(P.MRV_MANAGE);
+  protected readonly canManage = inject(AuthService).has(P.MRV_MANAGE) && writable();
   protected readonly label = label;
   protected readonly badge = mrvBadge;
   protected readonly busy = signal(false);

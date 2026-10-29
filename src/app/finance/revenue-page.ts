@@ -16,7 +16,8 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { FinanceApi } from './finance.api';
-import { Cost, FinanceProject, FormKeys, Revenue, Summary, currencyDecimals, finBadge, fitsMinorUnits, label, money } from './finance.models';
+import { FormKeys } from '../core/api/idempotency';
+import { Cost, FinanceProject, Revenue, Summary, currencyDecimals, finBadge, fitsMinorUnits, label, money } from './finance.models';
 import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
 
 /** Recognized revenue (append-only, per order item, from Phase 10 records — never typed here), reversals of completed refunds, the

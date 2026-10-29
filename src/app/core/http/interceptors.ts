@@ -8,7 +8,10 @@ import { AuthService } from '../auth/auth.service';
 
 const AUTH_ENDPOINT = /\/auth\/(login|refresh|logout|token)$/;
 
-/** Adds the bearer token; on a 401 refreshes once and retries the original request. */
+/**
+ * Adds the bearer token; on a 401 refreshes once and retries the original request. A failed refresh, or a retry that is refused again
+ * with the fresh token (the session was revoked or the account deactivated in between), ends the session: back to the sign-in page.
+ */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith(API_BASE)) return next(req);
   const auth = inject(AuthService);
@@ -26,7 +29,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
           auth.sessionEnded();
           return throwError(() => refreshErr);
         }),
-        switchMap((fresh) => next(req.clone({ setHeaders: { Authorization: `Bearer ${fresh}` } }))),
+        switchMap((fresh) => next(req.clone({ setHeaders: { Authorization: `Bearer ${fresh}` } })).pipe(
+          catchError((retryErr: unknown) => {
+            if (retryErr instanceof HttpErrorResponse && retryErr.status === 401) auth.sessionEnded();
+            return throwError(() => retryErr);
+          }),
+        )),
       );
     }),
   );

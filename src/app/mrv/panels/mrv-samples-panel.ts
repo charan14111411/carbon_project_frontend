@@ -20,6 +20,7 @@ import { runAction } from '../../shared/run-action';
 import { StatusBadge } from '../../shared/status-badge';
 import { MrvApi } from '../mrv.api';
 import { FieldCollection, Period } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 /** Phase 6 project side: laboratory engagements, sample registration & sealing, shipments, approved results with lineage. */
 @Component({
@@ -147,10 +148,10 @@ export class MrvSamplesPanel {
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
   private readonly auth = inject(AuthService);
-  protected readonly canEngage = this.auth.has(P.LAB_ENGAGE);
-  protected readonly canRegister = this.auth.has(P.LAB_SAMPLE_REGISTER);
-  protected readonly canManage = this.auth.has(P.LAB_SAMPLE_MANAGE);
-  protected readonly canShip = this.auth.has(P.LAB_SHIPMENT_MANAGE);
+  protected readonly canEngage = this.auth.has(P.LAB_ENGAGE) && writable();
+  protected readonly canRegister = this.auth.has(P.LAB_SAMPLE_REGISTER) && writable();
+  protected readonly canManage = this.auth.has(P.LAB_SAMPLE_MANAGE) && writable();
+  protected readonly canShip = this.auth.has(P.LAB_SHIPMENT_MANAGE) && writable();
   protected readonly canRead = this.auth.has(P.LAB_READ);
   protected readonly label = label;
   protected readonly badge = labBadge;

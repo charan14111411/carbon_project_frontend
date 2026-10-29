@@ -1,12 +1,15 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 
+import { ApiError } from '../core/api/api.models';
 import { DocumentsApi } from '../core/api/documents.api';
 import { AuthService } from '../core/auth/auth.service';
 import { P } from '../core/auth/permissions';
 import { NotifyService } from '../core/notify.service';
+import { READ_ONLY } from '../shared/read-only';
 import { runAction } from '../shared/run-action';
+import { StateView } from '../shared/state-view';
 import { StatusBadge } from '../shared/status-badge';
 import { CALCULATED_LABEL, CalcRun } from './calculation.models';
 import { PreverificationApi } from './preverification.api';
@@ -16,10 +19,11 @@ import { CalcReport, ReportVerify } from './preverification.models';
 @Component({
   selector: 'app-run-reports',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, MatButtonModule, StatusBadge],
+  imports: [DatePipe, MatButtonModule, StateView, StatusBadge],
   template: `
     <div class="reports" data-testid="report-section">
       <h3>Calculation report</h3>
+      <app-state-view [error]="error()" (retry)="load()" />
       @if (run().status !== 'APPROVED' && !reports().length) {
         <p class="small muted" data-testid="report-not-available">Official reports exist only for APPROVED runs (this run is {{ run().status }}).</p>
       }
@@ -35,7 +39,7 @@ import { CalcReport, ReportVerify } from './preverification.models';
           }
         </div>
       }
-      @if (canGenerate && run().status === 'APPROVED') {
+      @if (canGenerate() && run().status === 'APPROVED') {
         <button mat-stroked-button type="button" [disabled]="busy()" (click)="generate()" data-testid="generate-report">Generate report</button>
       }
       <p class="small muted">{{ calculatedLabel }}. The report is a deterministic rendering of frozen data; it is not a verification report.</p>
@@ -49,18 +53,22 @@ export class RunReports implements OnInit {
   private readonly api = inject(PreverificationApi);
   private readonly docs = inject(DocumentsApi);
   private readonly notify = inject(NotifyService);
-  protected readonly canGenerate = inject(AuthService).has(P.CALCULATION_MANAGE);
+  private readonly readOnly = inject(READ_ONLY);
+  private readonly mayGenerate = inject(AuthService).has(P.CALCULATION_MANAGE);
+  protected readonly canGenerate = computed(() => this.mayGenerate && !this.readOnly());
   protected readonly calculatedLabel = CALCULATED_LABEL;
   protected readonly reports = signal<CalcReport[]>([]);
   protected readonly verified = signal<Record<string, ReportVerify>>({});
   protected readonly busy = signal(false);
+  protected readonly error = signal<ApiError | null>(null);
 
   ngOnInit(): void {
     this.load();
   }
 
   load(): void {
-    this.api.reports(this.run().id).subscribe((r) => this.reports.set(r));
+    this.error.set(null);
+    this.api.reports(this.run().id).subscribe({ next: (r) => this.reports.set(r), error: (e: unknown) => this.error.set(ApiError.from(e)) });
   }
 
   protected generate(): void {
@@ -68,7 +76,7 @@ export class RunReports implements OnInit {
   }
 
   protected check(r: CalcReport): void {
-    this.api.verify(r.id).subscribe((v) => this.verified.update((m) => ({ ...m, [r.id]: v })));
+    this.api.verify(r.id).subscribe({ next: (v) => this.verified.update((m) => ({ ...m, [r.id]: v })), error: (e: unknown) => this.notify.error(e) });
   }
 
   protected download(r: CalcReport): void {

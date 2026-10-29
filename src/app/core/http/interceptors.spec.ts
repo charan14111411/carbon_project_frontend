@@ -73,6 +73,31 @@ describe('HTTP interceptors', () => {
     expect(err.code).toBe('REFRESH_REUSED');
   });
 
+  it('ends the session when the retry after a successful refresh is refused again', async () => {
+    signIn('old');
+    const ended = vi.spyOn(auth, 'sessionEnded').mockImplementation(() => undefined);
+    const result = rejection(firstValueFrom(http.get('/api/v1/admin/users')));
+    ctl.expectOne('/api/v1/admin/users').flush({}, { status: 401, statusText: 'Unauthorized' });
+    ctl.expectOne('/api/v1/auth/refresh').flush({ access_token: 'new', token_type: 'bearer', expires_in: 900, must_change_password: false });
+    ctl.expectOne('/api/v1/admin/users').flush(
+      { success: false, error_code: 'SESSION_REVOKED', message: 'ended', details: {}, request_id: 'y' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+    expect((await result).code).toBe('SESSION_REVOKED');
+    expect(ended).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the session when the retry fails for another reason', async () => {
+    signIn('old');
+    const ended = vi.spyOn(auth, 'sessionEnded').mockImplementation(() => undefined);
+    const result = rejection(firstValueFrom(http.get('/api/v1/admin/users')));
+    ctl.expectOne('/api/v1/admin/users').flush({}, { status: 401, statusText: 'Unauthorized' });
+    ctl.expectOne('/api/v1/auth/refresh').flush({ access_token: 'new', token_type: 'bearer', expires_in: 900, must_change_password: false });
+    ctl.expectOne('/api/v1/admin/users').flush({}, { status: 403, statusText: 'Forbidden' });
+    expect((await result).status).toBe(403);
+    expect(ended).not.toHaveBeenCalled();
+  });
+
   it('turns the backend error envelope into an ApiError with field errors', async () => {
     const result = rejection(firstValueFrom(http.post('/api/v1/admin/users', {})));
     ctl.expectOne('/api/v1/admin/users').flush(

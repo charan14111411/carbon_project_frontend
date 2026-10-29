@@ -97,3 +97,20 @@ describe('Document quarantine (Phase 12B)', () => {
     });
   });
 });
+
+describe('Quarantine read failure', () => {
+  it('shows the error with a retry instead of "No quarantined document"', async () => {
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] });
+    const http = TestBed.inject(HttpTestingController);
+    signIn(['security.read']);
+    const f = TestBed.createComponent(QuarantinePage);
+    f.detectChanges();
+    http.expectOne('/api/v1/evidence/documents/quarantined').flush(
+      { success: false, error_code: 'INTERNAL', message: 'Database down', details: {}, request_id: null }, { status: 500, statusText: 'Error' });
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[role="alert"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="no-quarantine"]')).toBeNull();
+  });
+});

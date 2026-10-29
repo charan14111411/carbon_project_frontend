@@ -15,6 +15,7 @@ import { runAction } from '../../shared/run-action';
 import { StatusBadge } from '../../shared/status-badge';
 import { MrvApi } from '../mrv.api';
 import { DESIGNS, Design, DesignVersion, Period, RuleSource, Stratum, mrvBadge, ruleSourceLabel } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 /**
  * Sampling design per monitoring period. Sample counts are configured per stratum (no "1 sample per X acres" rule);
@@ -101,8 +102,8 @@ export class MrvDesignPanel {
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
   private readonly auth = inject(AuthService);
-  protected readonly canManage = this.auth.has(P.SAMPLING_MANAGE);
-  protected readonly canReview = this.auth.has(P.SAMPLING_REVIEW);
+  protected readonly canManage = this.auth.has(P.SAMPLING_MANAGE) && writable();
+  protected readonly canReview = this.auth.has(P.SAMPLING_REVIEW) && writable();
   protected readonly label = label;
   protected readonly badge = mrvBadge;
   protected readonly designTypes = DESIGNS;

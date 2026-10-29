@@ -21,6 +21,9 @@ import { MrvApi } from './mrv.api';
 import { QaView, mrvBadge } from './mrv.models';
 
 /** MRV dataset + QA review. Deterministic checks; PASS → approval (QA officer, never the submitter). Ends at APPROVED. */
+/** Success toasts, written out (deriving the past tense from the verb gave "submited" / "approveed"). */
+export const DATASET_DONE = { submit: 'Dataset submitted.', approve: 'Dataset approved.', reject: 'Dataset rejected.' } as const;
+
 @Component({
   selector: 'app-mrv-dataset-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -120,7 +123,7 @@ export class MrvDatasetPage {
     const msg = { submit: 'The dataset is frozen (snapshot + SHA-256) and the period moves to SUBMITTED.',
       approve: 'Approved datasets are immutable. You cannot approve a dataset you submitted.', reject: 'The period returns for correction.' }[action];
     askReason(this.dialog, { title: `${label(action)} dataset?`, confirmLabel: label(action), danger: action === 'reject', message: msg }).subscribe((r) => {
-      if (r) runAction(this.api.datasetAction(this.id(), action, r.reason), this.busy, this.notify, `Dataset ${label(action).toLowerCase()}ed.`, () => this.load());
+      if (r) runAction(this.api.datasetAction(this.id(), action, r.reason), this.busy, this.notify, DATASET_DONE[action], () => this.load());
     });
   }
 

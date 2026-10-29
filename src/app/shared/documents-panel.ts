@@ -14,6 +14,9 @@ import { NotifyService } from '../core/notify.service';
 import { DocumentInfo, label } from '../farmer/farmer.models';
 import { StatusBadge } from './status-badge';
 
+/** Backend MAX_UPLOAD_BYTES (app/core/config.py, enforced in api/deps.py read_upload): 15 MB. */
+export const MAX_UPLOAD_MB = 15;
+
 export type UploadFn = (file: File, category: string, title: string) => Observable<{ id: string }>;
 
 /** Lists an entity's documents (all versions kept) and uploads new ones. Files are validated server-side. */
@@ -35,10 +38,10 @@ export type UploadFn = (file: File, category: string, title: string) => Observab
           <mat-label>Title</mat-label>
           <input matInput formControlName="title" maxlength="200" />
         </mat-form-field>
-        <input #fileInput type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp" (change)="pick(fileInput.files)" />
+        <input #fileInput type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp" (change)="pick(fileInput)" />
         <button mat-stroked-button type="button" (click)="fileInput.click()"><mat-icon>attach_file</mat-icon> {{ file()?.name ?? 'Choose file' }}</button>
         <button mat-flat-button type="submit" [disabled]="busy() || form.invalid || !file()">Upload</button>
-        <span class="muted small">PDF, PNG, JPEG or WebP · max 15 MB</span>
+        <span class="muted small">PDF, PNG, JPEG or WebP · max {{ maxMb }} MB</span>
       </form>
     }
     @for (d of documents(); track d.id) {
@@ -90,6 +93,7 @@ export class DocumentsPanel {
   private readonly docs = inject(DocumentsApi);
   private readonly notify = inject(NotifyService);
   protected readonly label = label;
+  protected readonly maxMb = MAX_UPLOAD_MB;
   protected readonly file = signal<File | null>(null);
   protected readonly busy = signal(false);
   protected readonly form = new FormGroup({
@@ -104,8 +108,16 @@ export class DocumentsPanel {
     });
   }
 
-  pick(files: FileList | null): void {
-    this.file.set(files?.[0] ?? null);
+  /** Takes the chosen file and clears the input, so choosing the same file again (e.g. after an upload) still fires (change). */
+  pick(input: HTMLInputElement): void {
+    const f = input.files?.[0] ?? null;
+    input.value = '';
+    if (f && f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      this.file.set(null);
+      this.notify.error(new Error(`${f.name} is larger than ${MAX_UPLOAD_MB} MB.`));
+      return;
+    }
+    this.file.set(f);
   }
 
   submit(): void {

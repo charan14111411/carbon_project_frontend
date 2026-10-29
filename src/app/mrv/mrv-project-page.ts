@@ -1,22 +1,23 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
-import { ActivatedRoute } from '@angular/router';
-import { forkJoin, map } from 'rxjs';
+import { forkJoin } from 'rxjs';
 
 import { ApiError } from '../core/api/api.models';
 import { AuthService } from '../core/auth/auth.service';
 import { P } from '../core/auth/permissions';
+import { NotifyService } from '../core/notify.service';
 import { label } from '../farmer/farmer.models';
 import { Project, ProjectFarm } from '../projects/project.models';
 import { ProjectsApi } from '../projects/projects.api';
 import { PageHeader } from '../shared/page-header';
+import { READ_ONLY } from '../shared/read-only';
 import { reloadOn } from '../shared/reload-on';
 import { StateView } from '../shared/state-view';
 import { StatusBadge } from '../shared/status-badge';
+import { urlTab } from '../shared/url-tab';
 import { MrvApi } from './mrv.api';
 import { Period, Requirements, Stratum, mrvBadge } from './mrv.models';
 import { MrvDatasetsPanel } from './panels/mrv-datasets-panel';
@@ -33,7 +34,8 @@ import { MrvPointsPanel } from './panels/mrv-points-panel';
 import { MrvRecordsPanel } from './panels/mrv-records-panel';
 import { MrvStrataPanel } from './panels/mrv-strata-panel';
 
-const TABS = ['plans', 'periods', 'strata', 'design', 'points', 'data', 'evidence', 'samples', 'datasets', 'calculations', 'history', 'verification', 'registry'];
+/** Keys of the always-shown tabs, in template order; Verification and Registry follow only when the user may see them. */
+export const MRV_TABS = ['plans', 'periods', 'strata', 'design', 'points', 'data', 'evidence', 'samples', 'datasets', 'calculations', 'history'];
 
 /** MRV workspace of one project (locked methodology). Tabs that work per monitoring period share the period picker. */
 @Component({
@@ -42,6 +44,8 @@ const TABS = ['plans', 'periods', 'strata', 'design', 'points', 'data', 'evidenc
   imports: [FormsModule, MatTabsModule, MatFormFieldModule, MatSelectModule, PageHeader, StateView, StatusBadge, MrvPlansPanel, MrvPeriodsPanel,
     MrvStrataPanel, MrvDesignPanel, MrvPointsPanel, MrvRecordsPanel, MrvEvidencePanel, MrvDatasetsPanel, MrvHistoryPanel, MrvSamplesPanel,
     MrvCalculationsPanel, VerificationPanel, RegistryPanel],
+  // A CLOSED project keeps its MRV history readable; the panels then offer no action (the server refuses writes too).
+  providers: [{ provide: READ_ONLY, useFactory: () => inject(MrvProjectPage).closed }],
   template: `
     <app-state-view [loading]="loading()" [error]="error()" (retry)="load()" />
     @if (project(); as p) {
@@ -60,13 +64,16 @@ const TABS = ['plans', 'periods', 'strata', 'design', 'points', 'data', 'evidenc
           </mat-form-field>
         }
       </div>
+      @if (closed()) {
+        <div class="note" role="note" data-testid="closed-note">This project is closed: its monitoring and calculation history is shown read-only.</div>
+      }
       @if (req()?.status === 'CONFIGURATION_REQUIRED') {
         <div class="note warn" role="note">
           <strong>CONFIGURATION_REQUIRED.</strong> The locked methodology version does not configure: {{ req()!.gaps.join('; ') }}.
           Project-configured values are used and recorded as such — nothing is invented.
         </div>
       }
-      <mat-tab-group animationDuration="0ms" mat-stretch-tabs="false" [selectedIndex]="tab()" (selectedIndexChange)="tab.set($event)">
+      <mat-tab-group animationDuration="0ms" mat-stretch-tabs="false" [selectedIndex]="tab.index()" (selectedIndexChange)="tab.select($event)">
         <mat-tab label="MRV plans"><ng-template matTabContent>
           <app-mrv-plans-panel [projectId]="p.id" [requirements]="req()" />
         </ng-template></mat-tab>
@@ -80,8 +87,8 @@ const TABS = ['plans', 'periods', 'strata', 'design', 'points', 'data', 'evidenc
           <app-mrv-design-panel [projectId]="p.id" [period]="period()" [strata]="strata()" (changed)="reloadPeriods()" />
         </ng-template></mat-tab>
         <mat-tab label="Points & assignments"><ng-template matTabContent>
-          <app-mrv-points-panel [projectId]="p.id" [period]="period()" [strata]="strata()" [canAssign]="auth.has(P.SAMPLING_ASSIGN)"
-                                [canReview]="auth.has(P.SAMPLING_REVIEW)" />
+          <app-mrv-points-panel [projectId]="p.id" [period]="period()" [strata]="strata()" [canAssign]="!closed() && auth.has(P.SAMPLING_ASSIGN)"
+                                [canReview]="!closed() && auth.has(P.SAMPLING_REVIEW)" />
         </ng-template></mat-tab>
         <mat-tab label="Monitoring data"><ng-template matTabContent>
           <app-mrv-records-panel [period]="period()" [farms]="farms()" [strata]="strata()" />
@@ -128,11 +135,12 @@ export class MrvProjectPage {
   protected readonly canRegistry = [P.REGISTRY_READ, P.REGISTRY_MANAGE, P.REGISTRY_CONFIRM].some((c) => this.auth.has(c));
   protected readonly canVerify = [P.VERIFICATION_READ, P.VERIFICATION_MANAGE, P.VERIFICATION_RESPOND].some((c) => this.auth.has(c));
   private readonly api = inject(MrvApi);
+  private readonly notify = inject(NotifyService);
   private readonly projectsApi = inject(ProjectsApi);
-  private readonly route = inject(ActivatedRoute);
   protected readonly label = label;
   protected readonly badge = mrvBadge;
   protected readonly project = signal<Project | null>(null);
+  readonly closed = computed(() => this.project()?.status === 'CLOSED');
   protected readonly req = signal<Requirements | null>(null);
   protected readonly farms = signal<ProjectFarm[]>([]);
   protected readonly periods = signal<Period[]>([]);
@@ -141,8 +149,8 @@ export class MrvProjectPage {
   protected readonly period = computed(() => this.periods().find((x) => x.id === this.periodId()) ?? null);
   protected readonly loading = signal(true);
   protected readonly error = signal<ApiError | null>(null);
-  protected readonly tab = signal(0);
-  private readonly tabParam = toSignal(this.route.queryParamMap.pipe(map((q) => q.get('tab'))));
+  private readonly tabKeys = [...MRV_TABS, ...(this.canVerify ? ['verification'] : []), ...(this.canRegistry ? ['registry'] : [])];
+  protected readonly tab = urlTab(() => this.tabKeys);
 
   constructor() {
     reloadOn(this.id, () => {
@@ -153,7 +161,6 @@ export class MrvProjectPage {
       this.loading.set(true);
       this.load();
     });
-    reloadOn(() => [this.id(), this.tabParam()], () => this.tab.set(Math.max(0, TABS.indexOf(this.tabParam() ?? 'plans'))));
   }
 
   load(): void {
@@ -172,16 +179,22 @@ export class MrvProjectPage {
   }
 
   reloadPeriods(): void {
-    this.api.periods(this.id()).subscribe((ps) => {
-      this.periods.set(ps);
-      if (!ps.some((x) => x.id === this.periodId())) {
-        const open = ps.find((x) => !['APPROVED', 'CLOSED'].includes(x.status)) ?? ps[0];
-        this.periodId.set(open?.id ?? null);
-      }
+    this.api.periods(this.id()).subscribe({
+      next: (ps) => {
+        this.periods.set(ps);
+        if (!ps.some((x) => x.id === this.periodId())) {
+          const open = ps.find((x) => !['APPROVED', 'CLOSED'].includes(x.status)) ?? ps[0];
+          this.periodId.set(open?.id ?? null);
+        }
+      },
+      error: (e: unknown) => this.notify.errorWithRetry('Monitoring periods could not be loaded:', e, () => this.reloadPeriods()),
     });
   }
 
   reloadStrata(): void {
-    this.api.strata(this.id()).subscribe((s) => this.strata.set(s));
+    this.api.strata(this.id()).subscribe({
+      next: (s) => this.strata.set(s),
+      error: (e: unknown) => this.notify.errorWithRetry('Strata could not be loaded:', e, () => this.reloadStrata()),
+    });
   }
 }

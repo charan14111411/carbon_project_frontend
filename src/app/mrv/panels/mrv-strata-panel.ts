@@ -20,6 +20,7 @@ import { runAction } from '../../shared/run-action';
 import { StatusBadge } from '../../shared/status-badge';
 import { MrvApi } from '../mrv.api';
 import { CHARACTERISTICS, CONTROL_SITE_CRITERIA, Characteristic, ControlCandidate, Stratum, mrvBadge } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 const COLORS = ['#2e7d32', '#6a1b9a', '#ef6c00', '#00838f', '#ad1457', '#558b2f'];
 const CONTROL_COLOR = '#455a64';
@@ -151,8 +152,8 @@ export class MrvStrataPanel {
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
   private readonly auth = inject(AuthService);
-  protected readonly canManage = this.auth.has(P.SAMPLING_MANAGE);
-  protected readonly canReview = this.auth.has(P.SAMPLING_REVIEW);
+  protected readonly canManage = this.auth.has(P.SAMPLING_MANAGE) && writable();
+  protected readonly canReview = this.auth.has(P.SAMPLING_REVIEW) && writable();
   protected readonly label = label;
   protected readonly badge = mrvBadge;
   protected readonly busy = signal(false);

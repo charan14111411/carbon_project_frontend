@@ -1,16 +1,19 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 
 import { CalcReadinessPanel } from '../../calculation/calc-readiness-panel';
 import { CalculationApi } from '../../calculation/calculation.api';
 import { CALCULATED_LABEL, CalcRun, DEMO_LABEL, Readiness, blockerTitle, calcBadge, formatValue } from '../../calculation/calculation.models';
+import { ApiError } from '../../core/api/api.models';
 import { AuthService } from '../../core/auth/auth.service';
 import { P } from '../../core/auth/permissions';
 import { NotifyService } from '../../core/notify.service';
 import { label } from '../../farmer/farmer.models';
+import { READ_ONLY } from '../../shared/read-only';
 import { runAction } from '../../shared/run-action';
+import { StateView } from '../../shared/state-view';
 import { StatusBadge } from '../../shared/status-badge';
 import { Period } from '../mrv.models';
 
@@ -18,11 +21,12 @@ import { Period } from '../mrv.models';
 @Component({
   selector: 'app-mrv-calculations-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, RouterLink, MatButtonModule, StatusBadge, CalcReadinessPanel],
+  imports: [DatePipe, RouterLink, MatButtonModule, StateView, StatusBadge, CalcReadinessPanel],
   template: `
     <div class="tab-body">
       <p class="note">{{ calculatedLabel }}. A calculation never creates credits; verification and issuance are later steps.</p>
       @if (!period()) { <p class="muted">Select a monitoring period.</p> }
+      <app-state-view [error]="error()" (retry)="reload()" />
       @if (readiness(); as r) {
         @if (r.environment === 'DEMO' || r.is_demo_illustrative) { <p class="note warn" data-testid="demo-label">{{ demoLabel }}</p> }
         <h3>Readiness · {{ r.monitoring_period }}</h3>
@@ -39,7 +43,7 @@ import { Period } from '../mrv.models';
         <div class="steps">
           @for (s of r.steps; track s.step) { <span class="step"><app-status-badge [status]="badge(s.status)" [text]="s.step + ': ' + s.label" /></span> }
         </div>
-        @if (canManage) {
+        @if (canManage()) {
           <button mat-flat-button type="button" [disabled]="busy()" (click)="create()" data-testid="create-run">New calculation run</button>
         }
       }
@@ -67,7 +71,10 @@ export class MrvCalculationsPanel {
   readonly period = input<Pick<Period, 'id'> | null>(null);
   private readonly api = inject(CalculationApi);
   private readonly notify = inject(NotifyService);
-  protected readonly canManage = inject(AuthService).has(P.CALCULATION_MANAGE);
+  private readonly readOnly = inject(READ_ONLY);
+  private readonly mayManage = inject(AuthService).has(P.CALCULATION_MANAGE);
+  /** A signal: the calculations page keeps this panel while the user switches between open and CLOSED projects. */
+  protected readonly canManage = computed(() => this.mayManage && !this.readOnly());
   protected readonly label = label;
   protected readonly badge = calcBadge;
   protected readonly title = blockerTitle;
@@ -77,6 +84,7 @@ export class MrvCalculationsPanel {
   protected readonly readiness = signal<Readiness | null>(null);
   protected readonly runs = signal<CalcRun[]>([]);
   protected readonly busy = signal(false);
+  protected readonly error = signal<ApiError | null>(null);
 
   constructor() {
     effect(() => {
@@ -88,8 +96,15 @@ export class MrvCalculationsPanel {
   }
 
   private load(periodId: string): void {
-    this.api.readiness(this.projectId(), periodId).subscribe((r) => this.readiness.set(r));
-    this.api.runs(this.projectId(), periodId).subscribe((r) => this.runs.set(r));
+    const failed = (e: unknown) => this.error.set(ApiError.from(e));
+    this.error.set(null);
+    this.api.readiness(this.projectId(), periodId).subscribe({ next: (r) => this.readiness.set(r), error: failed });
+    this.api.runs(this.projectId(), periodId).subscribe({ next: (r) => this.runs.set(r), error: failed });
+  }
+
+  protected reload(): void {
+    const p = this.period();
+    if (p) this.load(p.id);
   }
 
   protected create(): void {

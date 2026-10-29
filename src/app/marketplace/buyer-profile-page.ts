@@ -11,7 +11,8 @@ import { PageHeader } from '../shared/page-header';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { MarketplaceApi } from './marketplace.api';
-import { BuyerProfileView, marketBadge, mlabel, newKey } from './marketplace.models';
+import { newKey } from '../core/api/idempotency';
+import { BuyerProfileView, marketBadge, mlabel } from './marketplace.models';
 
 /** The buyer organization's profile and KYC (organization level). Documents are restricted (the buyer and the platform reviewer only) and
  *  PDF only; no particular legal document is assumed — upload what your compliance contact asked for. */

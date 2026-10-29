@@ -17,7 +17,8 @@ import { PageHeader } from '../shared/page-header';
 import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
-import { LedgerApi, newKey } from './ledger.api';
+import { newKey } from '../core/api/idempotency';
+import { LedgerApi } from './ledger.api';
 import {
   BALANCE_COLUMNS, Entry, Inventory, InventoryBatch, Position, Recipient, Reservation, Retirement, Reversal, Transfer, ledgerBadge, total,
 } from './ledger.models';

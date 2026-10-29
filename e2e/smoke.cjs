@@ -517,11 +517,22 @@ const REQUIRED_AUDIT = ['PROJECT_CREATED', 'PROJECT_STATUS_CHANGED', 'PROJECT_FA
   await shot(qa.page, '48-mrv-qa-review');
   await qa.page.getByTestId('complete-qa').click();
   await confirmReason(qa.page, 'Record', 'E2E: all checks pass');
-  await qa.page.getByTestId('approve-dataset').click();
-  await confirmReason(qa.page, 'Approve', 'E2E: dataset approved');
-  await qa.page.getByText('Approved', { exact: true }).first().waitFor();
-  phase5.datasetApproved = true;
-  await shot(qa.page, '49-mrv-dataset-approved');
+  // approver ≠ QA reviewer: the reviewer is refused, a second QA officer (qa2) approves
+  // the QA result is saved by the UI request above: retry while the server still reports QA_NOT_PASSED (up to 10 s)
+  for (let i = 0; i < 20; i += 1) {
+    const own = await api.post(`${MRV}/datasets/${ds.id}/approve`, { headers: await as('qa'), data: { reason: 'E2E: own review' } });
+    phase5.reviewerApproveRefused = `${own.status()} ${(await own.json().catch(() => ({}))).error_code ?? ''}`.trim();
+    if (!/QA_NOT_PASSED/.test(phase5.reviewerApproveRefused)) break;
+    await qa.page.waitForTimeout(500);
+  }
+  const qa2 = await signIn('qa2');
+  lastPage = qa2.page;
+  await qa2.page.goto(`${BASE}/mrv/datasets/${ds.id}`);
+  await qa2.page.getByTestId('approve-dataset').click();
+  await confirmReason(qa2.page, 'Approve', 'E2E: dataset approved');
+  await qa2.page.getByText('Approved', { exact: true }).first().waitFor();
+  phase5.datasetApproved = phase5.reviewerApproveRefused === '403 SEPARATION_OF_DUTIES';
+  await shot(qa2.page, '49-mrv-dataset-approved');
   // the 'Approved' text can match before the approval request finishes: wait for the period itself (up to 10 s)
   for (let i = 0; i < 20; i += 1) {
     phase5.periodStatus = (await json(await api.get(`${MRV}/monitoring-periods/${period.id}`, { headers: mrvH }))).status;

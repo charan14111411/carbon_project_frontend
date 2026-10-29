@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, map, tap } from 'rxjs';
 
 import { API_BASE, ApiService } from '../core/api/api.service';
+import { newKey } from '../core/api/idempotency';
 import { DocumentRef } from '../lab/lab.models';
 import { Assignment, CorrectiveAction, Decision, Lineage, Package, PeriodVerification, Submission, VDocument, VFinding, VvbOrg } from './verification.models';
 
@@ -36,7 +37,7 @@ export class VerificationApi {
   propose = (projectId: string, body: Body): Observable<Assignment> => this.api.post(`${this.b}/projects/${projectId}/assignments`, body);
   withdraw = (id: string, reason: string): Observable<Assignment> => this.api.post(`${this.b}/assignments/${id}/withdraw`, { reason });
   terminate = (id: string, reason: string): Observable<Assignment> => this.api.post(`${this.b}/assignments/${id}/terminate`, { reason });
-  submit = (id: string): Observable<Submission> => this.api.post(`${this.b}/assignments/${id}/submit`);
+  submit = (id: string, key = newKey()): Observable<Submission> => this.api.post(`${this.b}/assignments/${id}/submit`, {}, key);
   findings = (submissionId: string): Observable<VFinding[]> => this.api.get(`${this.b}/submissions/${submissionId}/findings`);
   evidence = (submissionId: string, file: File): Observable<DocumentRef> => this.api.upload(`${this.b}/submissions/${submissionId}/evidence`, file, {});
   respond = (findingId: string, response: string, documentId?: string | null): Observable<VFinding> =>
@@ -72,7 +73,7 @@ export class VvbApi {
   acceptCa = (id: string, note: string): Observable<CorrectiveAction> => this.api.post(`${this.b}/corrective-actions/${id}/accept`, { note });
   rejectCa = (id: string, note: string): Observable<CorrectiveAction> => this.api.post(`${this.b}/corrective-actions/${id}/reject`, { note });
   cancelCa = (id: string, reason: string): Observable<CorrectiveAction> => this.api.post(`${this.b}/corrective-actions/${id}/cancel`, { reason });
-  decide = (submissionId: string, file: File, fields: Record<string, string>): Observable<Decision> =>
-    this.api.upload(`${this.b}/submissions/${submissionId}/decision`, file, fields);
+  decide = (submissionId: string, file: File, fields: Record<string, string>, key = newKey()): Observable<Decision> =>
+    this.api.upload(`${this.b}/submissions/${submissionId}/decision`, file, fields, key);
   report = (d: Decision): Observable<void> => saveBlob(this.http, `${this.b}/decisions/${d.id}/report`, `${d.decision_code}.pdf`);
 }

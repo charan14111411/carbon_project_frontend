@@ -221,10 +221,6 @@ export function money(amount: string | null | undefined, currency: string): stri
   return `${sign}${groupDigits(whole.replace(/^[-+]/, ''), currency)}${decimals ? '.' + decimals : ''} ${currency}`;
 }
 
-export function newKey(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 /** Status labels for the marketplace (keeps "KYC" upper-case). */
 export function mlabel(code: string | null | undefined): string {
   return label(code).replace(/^Kyc/, 'KYC');

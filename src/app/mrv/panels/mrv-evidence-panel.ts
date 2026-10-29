@@ -14,6 +14,7 @@ import { ProjectFarm } from '../../projects/project.models';
 import { runAction } from '../../shared/run-action';
 import { MrvApi } from '../mrv.api';
 import { EVIDENCE_TYPES, Evidence, Period } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 /** MRV evidence linked to the project, a farm or the monitoring period (field photos are attached on the collection screen). */
 @Component({
@@ -64,7 +65,7 @@ export class MrvEvidencePanel {
   private readonly api = inject(MrvApi);
   private readonly notify = inject(NotifyService);
   private readonly auth = inject(AuthService);
-  protected readonly canAdd = this.auth.has(P.MRV_COLLECT) || this.auth.has(P.MRV_MANAGE);
+  protected readonly canAdd = (this.auth.has(P.MRV_COLLECT) || this.auth.has(P.MRV_MANAGE)) && writable();
   protected readonly label = label;
   protected readonly types = EVIDENCE_TYPES;
   protected readonly busy = signal(false);

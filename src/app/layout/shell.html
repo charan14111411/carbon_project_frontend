@@ -39,13 +39,14 @@
           @if (unread()) { <button mat-button type="button" (click)="markAllRead()">Mark all read</button> }
         </div>
         <mat-divider />
+        @if (notificationsError(); as msg) { <div class="menu-head" role="alert" data-testid="notif-error"><small>{{ msg }}</small></div> }
         @for (n of notifications(); track n.id) {
           <button mat-menu-item type="button" (click)="openNotification(n)" [class.unread]="!n.read_at">
             <span class="notif-title">{{ n.title }}</span>
             <span class="notif-time">{{ n.created_at | date: 'short' }}</span>
           </button>
         } @empty {
-          <div class="menu-head"><small>No notifications.</small></div>
+          @if (!notificationsError()) { <div class="menu-head"><small>No notifications.</small></div> }
         }
       </mat-menu>
       <span class="divider" aria-hidden="true"></span>

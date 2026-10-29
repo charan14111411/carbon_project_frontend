@@ -106,3 +106,45 @@ describe('DocumentsPanel', () => {
     expect(form.value.category).toBe('LAND_RECORD');
   });
 });
+
+describe('allPages', () => {
+  it('pages through the whole list instead of stopping at 100', async () => {
+    const { firstValueFrom, of } = await import('rxjs');
+    const { allPages } = await import('./paged-list');
+    const asked: number[] = [];
+    const items = await firstValueFrom(allPages((q) => {
+      asked.push(q.page);
+      const start = (q.page - 1) * q.page_size;
+      return of({ items: Array.from({ length: Math.max(0, Math.min(q.page_size, 230 - start)) }, (_, i) => start + i), total: 230,
+        page: q.page, page_size: q.page_size });
+    }));
+    expect(asked).toEqual([1, 2, 3]);
+    expect(items.length).toBe(230);
+    expect(items[229]).toBe(229);
+  });
+});
+
+describe('DocumentsPanel file input', () => {
+  it('clears the input after a pick (the same file can be chosen again) and refuses files over the server limit', async () => {
+    const { provideHttpClient } = await import('@angular/common/http');
+    const { DocumentsPanel, MAX_UPLOAD_MB } = await import('./documents-panel');
+    TestBed.configureTestingModule({ providers: [provideHttpClient()] });
+    const f = TestBed.createComponent(DocumentsPanel);
+    f.componentRef.setInput('canUpload', true);
+    f.detectChanges();
+    const panel = f.componentInstance as unknown as { pick(i: HTMLInputElement): void; file(): File | null };
+    const input = (n: number, name = 'a.pdf') => {
+      const file = new File(['x'], name);
+      Object.defineProperty(file, 'size', { value: n });
+      const el = { files: [file], value: 'fakepath/' + name } as unknown as HTMLInputElement;
+      return el;
+    };
+    const ok = input(1024);
+    panel.pick(ok);
+    expect(panel.file()?.name).toBe('a.pdf');
+    expect(ok.value).toBe('');
+    panel.pick(input(MAX_UPLOAD_MB * 1024 * 1024 + 1, 'big.pdf'));
+    expect(panel.file()).toBeNull();
+    expect((f.nativeElement as HTMLElement).textContent).toContain(`max ${MAX_UPLOAD_MB} MB`);
+  });
+});

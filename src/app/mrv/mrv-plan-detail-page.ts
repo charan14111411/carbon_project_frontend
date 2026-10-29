@@ -16,6 +16,9 @@ import { MrvApi } from './mrv.api';
 import { Plan, dataRoleLabel, mrvBadge } from './mrv.models';
 
 /** MRV plan detail: submit (manager), approve / return (QA, never the submitter). An approved plan is never edited. */
+/** Success toasts, written out (deriving the past tense from the verb gave "submited" / "approveed"). */
+export const PLAN_DONE = { submit: 'Plan submitted.', approve: 'Plan approved.', return: 'Plan returned.', withdraw: 'Plan withdrawn.' } as const;
+
 @Component({
   selector: 'app-mrv-plan-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -108,7 +111,7 @@ export class MrvPlanDetailPage {
     askReason(this.dialog, { title: `${label(action)} MRV plan v${p.plan_version}?`, confirmLabel: label(action), danger: action === 'withdraw',
       message: gaps ? 'By approving you acknowledge the CONFIGURATION_REQUIRED gaps listed on this page (recorded in the audit log).' : undefined })
       .subscribe((r) => {
-        if (r) runAction(this.api.planAction(p.id, action, r.reason, gaps), this.busy, this.notify, `Plan ${label(action).toLowerCase()}ed.`,
+        if (r) runAction(this.api.planAction(p.id, action, r.reason, gaps), this.busy, this.notify, PLAN_DONE[action],
           (x) => this.plan.set(x));
       });
   }

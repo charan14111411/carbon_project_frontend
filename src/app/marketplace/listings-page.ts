@@ -17,7 +17,8 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { MarketplaceApi } from './marketplace.api';
-import { Listing, Listings, currencyDecimals, fitsMinorUnits, marketBadge, money, mlabel, newKey } from './marketplace.models';
+import { newKey } from '../core/api/idempotency';
+import { Listing, Listings, currencyDecimals, fitsMinorUnits, marketBadge, money, mlabel } from './marketplace.models';
 
 interface Owner { batch: InventoryBatch; owner_id: string; owner_name: string | null; available: number }
 

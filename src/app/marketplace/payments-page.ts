@@ -11,7 +11,8 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { MarketplaceApi } from './marketplace.api';
-import { Payment, Refund, marketBadge, money, mlabel, newKey } from './marketplace.models';
+import { newKey } from '../core/api/idempotency';
+import { Payment, Refund, marketBadge, money, mlabel } from './marketplace.models';
 
 /** Seller finance (the payee): confirm received payments (never one you recorded — this requests the ledger delivery), reject, request /
  *  approve refunds (money only). Refund completion with evidence happens on the order. */

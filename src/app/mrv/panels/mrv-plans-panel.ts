@@ -9,6 +9,7 @@ import { label } from '../../farmer/farmer.models';
 import { StatusBadge } from '../../shared/status-badge';
 import { MrvApi } from '../mrv.api';
 import { Plan, Requirements, mrvBadge } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 /** MRV plan list (versions). Approved plans are never edited; a change is a new plan version. */
 @Component({
@@ -61,7 +62,8 @@ export class MrvPlansPanel implements OnInit {
   protected readonly label = label;
   protected readonly badge = mrvBadge;
   protected readonly plans = signal<Plan[]>([]);
-  protected readonly canCreate = computed(() => this.auth.has(P.MRV_MANAGE) && !this.plans().some((x) => ['DRAFT', 'SUBMITTED'].includes(x.status)));
+  private readonly isWritable = writable();
+  protected readonly canCreate = computed(() => this.isWritable && this.auth.has(P.MRV_MANAGE) && !this.plans().some((x) => ['DRAFT', 'SUBMITTED'].includes(x.status)));
   protected readonly approvedAt = computed(() => this.plans().find((x) => x.status === 'APPROVED')?.approved_at ?? null);
 
   ngOnInit(): void {

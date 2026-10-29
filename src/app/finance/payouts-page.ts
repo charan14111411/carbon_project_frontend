@@ -14,7 +14,8 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { FinanceApi } from './finance.api';
-import { Adjustment, FIN_DEMO_NOTE, Payout, finBadge, label, money, newKey } from './finance.models';
+import { newKey } from '../core/api/idempotency';
+import { Adjustment, FIN_DEMO_NOTE, Payout, finBadge, label, money } from './finance.models';
 import { FIN_STYLES } from './project-picker';
 
 /** Payouts: calculated from approved settlement runs (never typed), approved by someone other than the calculator to the farmer's VERIFIED

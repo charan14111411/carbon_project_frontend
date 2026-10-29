@@ -22,7 +22,8 @@ import { reloadOn } from '../shared/reload-on';
 import { runAction } from '../shared/run-action';
 import { StateView } from '../shared/state-view';
 import { StatusBadge } from '../shared/status-badge';
-import { FARM_ACTIONS, FARM_DOC_CATEGORIES, Farm, Overlap } from './farm.models';
+import { urlTab } from '../shared/url-tab';
+import { AREA_MISMATCH_PCT, FARM_ACTIONS, FARM_DOC_CATEGORIES, Farm, Overlap, areaMismatch } from './farm.models';
 import { FarmsApi } from './farms.api';
 import { BoundaryEditor } from './panels/boundary-editor';
 import { FarmEvidencePanel } from './panels/farm-evidence-panel';
@@ -50,14 +51,21 @@ const TABS = ['overview', 'boundary', 'ownership', 'history', 'evidence', 'overl
       <div class="status-row">
         <app-status-badge [status]="badge(f.status)" [text]="f.status" />
         @if (f.open_overlaps) { <app-status-badge status="WARNING" [text]="f.open_overlaps + ' overlap flag(s)'" /> }
+        @if (overlapsFailed()) { <app-status-badge status="FAILED" text="Overlaps could not be loaded" data-testid="overlaps-failed" /> }
         @if (f.environment === 'DEMO') { <app-status-badge status="DEMO" /> }
       </div>
-      <mat-tab-group animationDuration="0ms" mat-stretch-tabs="false" [selectedIndex]="tab()" (selectedIndexChange)="tab.set($event)">
+      <mat-tab-group animationDuration="0ms" mat-stretch-tabs="false" [selectedIndex]="tab.index()" (selectedIndexChange)="tab.select($event)">
         <mat-tab label="Overview">
           <ng-template matTabContent>
             <div class="tab-body overview">
               <app-geo-map [layers]="layers()" height="380px" />
               <div>
+                @if (areaGap(); as gap) {
+                  <p class="note warn" role="note" data-testid="area-mismatch">
+                    The measured area ({{ area(f.area_hectares) }}) differs from the declared area ({{ area(f.declared_area_hectares) }})
+                    by {{ gap.toFixed(0) }} % — more than {{ mismatchPct }} %. Check the boundary or correct the declared area.
+                  </p>
+                }
                 <dl class="kv">
                   <dt>Measured area</dt><dd>{{ area(f.area_hectares) }} <span class="muted small">(SQL Server STArea)</span></dd>
                   <dt>Declared area</dt><dd>{{ area(f.declared_area_hectares) }}</dd>
@@ -122,13 +130,20 @@ export class FarmDetailPage {
   protected readonly loading = signal(true);
   protected readonly error = signal<ApiError | null>(null);
   protected readonly busy = signal(false);
-  protected readonly tab = signal(0);
-  private readonly tabParam = toSignal(this.route.queryParamMap.pipe(map((q) => q.get('tab'))));
+  /** The overlap read failed: the Overlaps tab would otherwise read "No overlaps". */
+  protected readonly overlapsFailed = signal(false);
+  protected readonly tab = urlTab(() => TABS);
   protected readonly categoryParam = toSignal(this.route.queryParamMap.pipe(map((q) => q.get('category'))));
   protected readonly label = label;
   protected readonly area = formatArea;
   protected readonly categories = FARM_DOC_CATEGORIES;
   protected readonly uploadFn: UploadFn = (file, category, title) => this.api.uploadDocument(this.id(), file, category, title);
+
+  protected readonly mismatchPct = AREA_MISMATCH_PCT;
+  protected readonly areaGap = computed(() => {
+    const f = this.farm();
+    return f ? areaMismatch(f.area_hectares, f.declared_area_hectares) : null;
+  });
 
   protected readonly layers = computed<MapLayer[]>(() => {
     const f = this.farm();
@@ -159,7 +174,6 @@ export class FarmDetailPage {
       this.loading.set(true);
       this.load();
     });
-    reloadOn(() => [this.id(), this.tabParam()], () => this.tab.set(Math.max(0, TABS.indexOf(this.tabParam() ?? 'overview'))));
   }
 
   load(): void {
@@ -176,7 +190,11 @@ export class FarmDetailPage {
   setFarm(f: Farm): void {
     this.farm.set(f);
     this.loading.set(false);
-    this.api.overlaps(f.id).subscribe((o) => this.overlaps.set(o));
+    this.overlapsFailed.set(false);
+    this.api.overlaps(f.id).subscribe({
+      next: (o) => this.overlaps.set(o),
+      error: (e: unknown) => { this.overlapsFailed.set(true); this.notify.error(e); },
+    });
   }
 
   place(f: Farm): string {

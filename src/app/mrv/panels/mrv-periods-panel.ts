@@ -15,6 +15,7 @@ import { runAction } from '../../shared/run-action';
 import { StatusBadge } from '../../shared/status-badge';
 import { MrvApi } from '../mrv.api';
 import { PERIOD_ACTIONS, Period, PeriodStatus, mrvBadge } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 /** Monitoring periods: DRAFT → PLANNED → ACTIVE → DATA_COLLECTION → (dataset) SUBMITTED → QA_REVIEW → APPROVED / REJECTED → CLOSED. */
 @Component({
@@ -69,7 +70,7 @@ export class MrvPeriodsPanel {
   private readonly api = inject(MrvApi);
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
-  protected readonly canManage = inject(AuthService).has(P.MRV_MANAGE);
+  protected readonly canManage = inject(AuthService).has(P.MRV_MANAGE) && writable();
   protected readonly label = label;
   protected readonly badge = mrvBadge;
   protected readonly busy = signal(false);

@@ -17,6 +17,7 @@ import { runAction } from '../../shared/run-action';
 import { StatusBadge } from '../../shared/status-badge';
 import { MrvApi } from '../mrv.api';
 import { Measurement, MonitoringRecord, Period, Plan, SamplingPoint, Stratum, capturableInMrv, dataRoleLabel, mrvBadge, parseMeasurementValue } from '../mrv.models';
+import { writable } from '../../shared/read-only';
 
 /** Monitoring data entry against the approved plan's configurable measurement definitions. Corrections create new versions. */
 @Component({
@@ -89,7 +90,7 @@ export class MrvRecordsPanel {
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
   private readonly auth = inject(AuthService);
-  protected readonly canRecord = this.auth.has(P.MRV_COLLECT) || this.auth.has(P.MRV_MANAGE);
+  protected readonly canRecord = (this.auth.has(P.MRV_COLLECT) || this.auth.has(P.MRV_MANAGE)) && writable();
   protected readonly label = label;
   protected readonly badge = mrvBadge;
   protected readonly roleLabel = dataRoleLabel;

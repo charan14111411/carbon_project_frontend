@@ -5,16 +5,20 @@ import { RouterLink } from '@angular/router';
 
 import { FarmSummary } from '../../farms/farm.models';
 import { FarmsApi } from '../../farms/farms.api';
+import { ApiError } from '../../core/api/api.models';
 import { formatArea } from '../../shared/geo';
+import { allPages } from '../../shared/paged-list';
+import { StateView } from '../../shared/state-view';
 import { StatusBadge } from '../../shared/status-badge';
 import { Farmer } from '../farmer.models';
 
 @Component({
   selector: 'app-farmer-farms-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MatButtonModule, MatIconModule, StatusBadge],
+  imports: [RouterLink, MatButtonModule, MatIconModule, StateView, StatusBadge],
   template: `
     <div class="tab-body">
+      <app-state-view [error]="error()" (retry)="ngOnInit()" />
       @for (farm of farms(); track farm.id) {
         <a class="line" [routerLink]="['/farms', farm.id]">
           <mat-icon>agriculture</mat-icon>
@@ -23,7 +27,7 @@ import { Farmer } from '../farmer.models';
           @if (farm.open_overlaps) { <app-status-badge status="WARNING" [text]="farm.open_overlaps + ' overlap'" /> }
           <app-status-badge [status]="farm.status === 'VERIFIED' ? 'ACTIVE' : farm.status" [text]="farm.status" />
         </a>
-      } @empty { <p class="muted">No farms yet.</p> }
+      } @empty { @if (!error()) { <p class="muted">No farms yet.</p> } }
       @if (canAdd()) {
         <a mat-flat-button [routerLink]="['/farms/new']" [queryParams]="{ farmer: farmer().id }"><mat-icon>add_location_alt</mat-icon> Add farm</a>
       } @else if (farmer().status === 'DRAFT') {
@@ -41,10 +45,15 @@ export class FarmerFarmsPanel implements OnInit {
   readonly farmer = input.required<Farmer>();
   private readonly api = inject(FarmsApi);
   protected readonly farms = signal<FarmSummary[]>([]);
+  protected readonly error = signal<ApiError | null>(null);
   protected readonly area = formatArea;
   protected readonly canAdd = computed(() => this.farmer().can_manage && !['DRAFT', 'SUSPENDED'].includes(this.farmer().status));
 
   ngOnInit(): void {
-    this.api.list({ farmer_id: this.farmer().id, page_size: 100 }).subscribe((p) => this.farms.set(p.items));
+    this.error.set(null);
+    allPages((q) => this.api.list({ ...q, farmer_id: this.farmer().id })).subscribe({
+      next: (farms) => this.farms.set(farms),
+      error: (e: unknown) => this.error.set(ApiError.from(e)),
+    });
   }
 }

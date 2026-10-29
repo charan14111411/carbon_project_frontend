@@ -15,6 +15,7 @@ import { P } from '../core/auth/permissions';
 import { NotifyService } from '../core/notify.service';
 import { applyServerErrors, languageCode } from '../shared/forms';
 import { PageHeader } from '../shared/page-header';
+import { allPages } from '../shared/paged-list';
 import { FarmersApi } from './farmers.api';
 
 const MANAGING = new Set(['PROJECT_DEVELOPER', 'FIELD_PARTNER', 'FARMER_GROUP']);
@@ -113,8 +114,10 @@ export class FarmerCreatePage implements OnInit {
     this.orgs.set(allowed.map((m) => ({ id: m.organization_id, name: m.organization_name, code: m.organization_code })));
     if (allowed.length === 1) this.form.controls.organization_id.setValue(allowed[0].organization_id);
     if (!allowed.length && this.auth.has('organizations.read')) {
-      this.orgsApi.list({ page_size: 100, status: 'ACTIVE' }).subscribe((p) =>
-        this.orgs.set(p.items.filter((o) => MANAGING.has(o.org_type))));
+      allPages((q) => this.orgsApi.list({ ...q, status: 'ACTIVE', sort: 'name' })).subscribe({
+        next: (orgs) => this.orgs.set(orgs.filter((o) => MANAGING.has(o.org_type))),
+        error: (e: unknown) => this.notify.error(e),
+      });
     }
   }
 

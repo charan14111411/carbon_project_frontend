@@ -48,7 +48,3 @@ export class LedgerApi {
   recipients = (environment: string): Observable<Recipient[]> => this.api.get(`${this.b}/recipients`, { environment });
 }
 
-/** A fresh Idempotency-Key for one user submission (kept across retries of that submission, renewed after success). */
-export function newKey(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}

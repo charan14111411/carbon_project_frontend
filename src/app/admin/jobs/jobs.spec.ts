@@ -83,3 +83,21 @@ describe('Background jobs', () => {
     });
   });
 });
+
+describe('Background jobs read failure', () => {
+  it('shows the error with a retry instead of "No background job"', async () => {
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] });
+    const http = TestBed.inject(HttpTestingController);
+    signIn(['jobs.read']);
+    const f = TestBed.createComponent(JobsPage);
+    f.detectChanges();
+    http.expectOne('/api/v1/jobs/registry').flush([]);
+    http.expectOne('/api/v1/jobs/status').flush(STATUS);
+    http.expectOne((r) => r.url === '/api/v1/jobs').flush({}, { status: 503, statusText: 'Unavailable' });
+    await f.whenStable();
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[role="alert"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="no-jobs"]')).toBeNull();
+  });
+});

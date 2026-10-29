@@ -14,6 +14,7 @@ import { ApiError } from '../../core/api/api.models';
 import { NotifyService } from '../../core/notify.service';
 import { applyServerErrors, passwordPolicyValidator } from '../../shared/forms';
 import { PageHeader } from '../../shared/page-header';
+import { allPages } from '../../shared/paged-list';
 import { generateTemporaryPassword } from '../../shared/password';
 import { OrganizationsApi, RolesApi, UsersApi } from '../admin.api';
 import { Organization, Role, orgTypeLabel } from '../admin.models';
@@ -53,8 +54,11 @@ export class UserCreatePage implements OnInit {
   protected readonly selectedOrgName = computed(() => this.orgs().find((o) => o.id === this.selectedOrg())?.name ?? null);
 
   ngOnInit(): void {
-    this.orgsApi.list({ page_size: 100, status: 'ACTIVE', sort: 'name' }).subscribe((p) => this.orgs.set(p.items.filter((o) => o.org_type !== 'PLATFORM')));
-    this.rolesApi.list().subscribe((r) => this.roles.set(r));
+    allPages((q) => this.orgsApi.list({ ...q, status: 'ACTIVE', sort: 'name' })).subscribe({
+      next: (orgs) => this.orgs.set(orgs.filter((o) => o.org_type !== 'PLATFORM')),
+      error: (e: unknown) => this.notify.errorWithRetry('Organizations could not be loaded:', e, () => this.ngOnInit()),
+    });
+    this.rolesApi.list().subscribe({ next: (r) => this.roles.set(r), error: (e: unknown) => this.notify.error(e) });
   }
 
   protected rolesFor(scope: 'PLATFORM' | 'ORGANIZATION'): Role[] {

@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { ApiService } from '../core/api/api.service';
+import { newKey } from '../core/api/idempotency';
 import { CalcCompare, CalcInputs, CalcProject, CalcLineage, CalcOutputs, CalcQaView, CalcRun, Readiness } from './calculation.models';
 
 /** `/calculations` — no method sends a calculated value; the server computes everything from frozen inputs. */
@@ -22,7 +23,7 @@ export class CalculationApi {
   execute = (id: string): Observable<CalcRun> => this.api.post(`${this.b}/runs/${id}/execute`);
   submit = (id: string): Observable<CalcRun> => this.api.post(`${this.b}/runs/${id}/submit`);
   cancel = (id: string, reason: string): Observable<CalcRun> => this.api.post(`${this.b}/runs/${id}/cancel`, { reason });
-  approve = (id: string, reason: string): Observable<CalcRun> => this.api.post(`${this.b}/runs/${id}/approve`, { reason });
+  approve = (id: string, reason: string, key = newKey()): Observable<CalcRun> => this.api.post(`${this.b}/runs/${id}/approve`, { reason }, key);
   reject = (id: string, reason: string): Observable<CalcRun> => this.api.post(`${this.b}/runs/${id}/reject`, { reason });
   recalculate = (id: string, reason: string): Observable<CalcRun> => this.api.post(`${this.b}/runs/${id}/recalculate`, { reason });
   inputs = (id: string): Observable<CalcInputs> => this.api.get(`${this.b}/runs/${id}/inputs`);

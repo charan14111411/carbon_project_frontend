@@ -2,9 +2,24 @@ import { DestroyRef, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { PageEvent } from '@angular/material/paginator';
 import { Sort } from '@angular/material/sort';
-import { Observable, Subject, catchError, finalize, of, switchMap, tap } from 'rxjs';
+import { EMPTY, Observable, Subject, catchError, expand, finalize, map, of, reduce, switchMap, tap } from 'rxjs';
 
 import { ApiError, Page, PageQuery } from '../core/api/api.models';
+
+/** Largest page the API serves (backend `page_size` le=100). */
+export const MAX_PAGE_SIZE = 100;
+
+/**
+ * Every item of a paged list, fetched page by page (for pickers and short lists that must never be cut off silently at one page).
+ * Stops when `total` is reached or a page comes back empty.
+ */
+export function allPages<T>(fetch: (q: { page: number; page_size: number }) => Observable<Page<T>>): Observable<T[]> {
+  const get = (page: number) => fetch({ page, page_size: MAX_PAGE_SIZE }).pipe(map((res) => ({ page, res })));
+  return get(1).pipe(
+    expand(({ page, res }) => (res.items.length && page * MAX_PAGE_SIZE < res.total ? get(page + 1) : EMPTY)),
+    reduce((all, { res }) => all.concat(res.items), [] as T[]),
+  );
+}
 
 /**
  * Server-side pagination + sorting state for a list page (spec section 38).

@@ -16,7 +16,8 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { FinanceApi } from './finance.api';
-import { Allocation, FinanceProject, FormKeys, ROUNDING_MODES, ShareVersion, finBadge, label, pctTotal } from './finance.models';
+import { FormKeys } from '../core/api/idempotency';
+import { Allocation, FinanceProject, ROUNDING_MODES, ShareVersion, finBadge, label, pctTotal } from './finance.models';
 import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
 
 /** Revenue-share versions (the farmer share percentage, cost deduction and rounding mode come from the project's agreements — the platform

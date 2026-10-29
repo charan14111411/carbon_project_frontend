@@ -7,12 +7,14 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { Observable } from 'rxjs';
 
+import { ApiError } from '../../core/api/api.models';
 import { AuthService } from '../../core/auth/auth.service';
 import { NotifyService } from '../../core/notify.service';
 import { label } from '../../farmer/farmer.models';
 import { PageHeader } from '../../shared/page-header';
 import { askReason } from '../../shared/reason-dialog';
 import { runAction } from '../../shared/run-action';
+import { StateView } from '../../shared/state-view';
 import { StatusBadge } from '../../shared/status-badge';
 import { Job, JobAttempt, JobsApi, JobsStatus, TaskSpec, jobBadge } from './jobs.api';
 
@@ -24,7 +26,7 @@ const STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'RETRY_WAITING', 'SUCCEEDED', 
 @Component({
   selector: 'app-jobs-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, MatButtonModule, MatFormFieldModule, MatSelectModule, PageHeader, StatusBadge],
+  imports: [DatePipe, FormsModule, MatButtonModule, MatFormFieldModule, MatSelectModule, PageHeader, StateView, StatusBadge],
   template: `
     <app-page-header title="Background jobs" subtitle="Scheduled maintenance work recorded in SQL Server (Redis only transports job ids)" />
     @if (status(); as s) {
@@ -52,6 +54,7 @@ const STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'RETRY_WAITING', 'SUCCEEDED', 
         <mat-select [(ngModel)]="typeFilter" (ngModelChange)="reload()"><mat-option value="">All</mat-option>
           @for (t of registry(); track t.job_type) { <mat-option [value]="t.job_type">{{ t.job_type }}</mat-option> }</mat-select></mat-form-field>
     </div>
+    <app-state-view [error]="error()" (retry)="ngOnInit()" />
     <div class="table-wrap"><table class="table" data-testid="jobs">
       <thead><tr><th>Job</th><th>Task</th><th>Status</th><th>Queue</th><th>Created</th><th>Started</th><th>Completed</th><th>Retries</th><th>Last error</th><th>Env.</th><th></th></tr></thead>
       <tbody>
@@ -64,7 +67,7 @@ const STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'RETRY_WAITING', 'SUCCEEDED', 
             <td class="small">{{ j.error_code ?? (j.status === 'QUEUED' ? j.last_publish_error : null) ?? '—' }}</td><td>{{ j.environment }}</td>
             <td>@if (j.can_retry) { <button mat-button type="button" [disabled]="busy()" (click)="retry(j)">Retry</button> }
               @if (j.can_cancel) { <button mat-button type="button" [disabled]="busy()" (click)="cancel(j)">Cancel</button> }</td></tr>
-        } @empty { <tr><td colspan="11" class="muted" data-testid="no-jobs">No background job.</td></tr> }
+        } @empty { @if (!error()) { <tr><td colspan="11" class="muted" data-testid="no-jobs">No background job.</td></tr> } }
       </tbody>
     </table></div>
     @if (detail(); as d) {
@@ -113,24 +116,30 @@ export class JobsPage implements OnInit {
   protected readonly detail = signal<Job | null>(null);
   protected readonly attempts = signal<JobAttempt[]>([]);
   protected readonly busy = signal(false);
+  /** A failed read: shown instead of an empty table that would look like "no jobs". */
+  protected readonly error = signal<ApiError | null>(null);
   protected statusFilter = '';
   protected typeFilter = '';
 
   ngOnInit(): void {
-    this.api.registry().subscribe((r) => this.registry.set(r));
+    this.error.set(null);
+    this.api.registry().subscribe({ next: (r) => this.registry.set(r), error: this.failed });
     this.reload();
   }
 
+  private readonly failed = (e: unknown) => this.error.set(ApiError.from(e));
+
   reload(): void {
-    this.api.status().subscribe((s) => this.status.set(s));
-    this.api.list(this.statusFilter, this.typeFilter).subscribe((j) => this.jobs.set(j));
+    this.error.set(null);
+    this.api.status().subscribe({ next: (s) => this.status.set(s), error: this.failed });
+    this.api.list(this.statusFilter, this.typeFilter).subscribe({ next: (j) => this.jobs.set(j), error: this.failed });
     const d = this.detail();
     if (d) this.open(d);
   }
 
   protected open(j: Job): void {
-    this.api.get(j.id).subscribe((x) => this.detail.set(x));
-    this.api.attempts(j.id).subscribe((a) => this.attempts.set(a));
+    this.api.get(j.id).subscribe({ next: (x) => this.detail.set(x), error: (e: unknown) => this.notify.error(e) });
+    this.api.attempts(j.id).subscribe({ next: (a) => this.attempts.set(a), error: (e: unknown) => this.notify.error(e) });
   }
 
   private act(obs: Observable<Job>, message: string): void {

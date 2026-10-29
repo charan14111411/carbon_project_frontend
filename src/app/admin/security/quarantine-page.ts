@@ -4,6 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { finalize } from 'rxjs';
 
+import { ApiError } from '../../core/api/api.models';
 import { P } from '../../core/auth/permissions';
 import { AuthService } from '../../core/auth/auth.service';
 import { DocumentScan, DocumentsApi, SecurityDocument } from '../../core/api/documents.api';
@@ -12,6 +13,7 @@ import { label } from '../../farmer/farmer.models';
 import { PageHeader } from '../../shared/page-header';
 import { askReason } from '../../shared/reason-dialog';
 import { runAction } from '../../shared/run-action';
+import { StateView } from '../../shared/state-view';
 import { StatusBadge } from '../../shared/status-badge';
 
 export function scanBadge(result: string): string {
@@ -24,11 +26,12 @@ export function scanBadge(result: string): string {
 @Component({
   selector: 'app-quarantine-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, MatButtonModule, PageHeader, StatusBadge],
+  imports: [DatePipe, MatButtonModule, PageHeader, StateView, StatusBadge],
   template: `
     <app-page-header title="Document quarantine" subtitle="Files held because malware was found, the scanner was unavailable, or security placed a hold" />
     <p class="small muted">Release requires a clean antivirus rescan of every version, run at release time. A test-signature result
       (NOT_SCANNED) is never treated as clean. Every scan is kept in the history.</p>
+    <app-state-view [error]="error()" (retry)="reload()" />
     <div class="table-wrap"><table class="table" data-testid="quarantine">
       <thead><tr><th>Document</th><th>State</th><th>Latest scan</th><th>Entity</th><th>Uploaded</th><th></th></tr></thead>
       <tbody>
@@ -44,7 +47,7 @@ export function scanBadge(result: string): string {
               <button mat-button type="button" [disabled]="busy()" (click)="release(d)">Release</button>
             }</td>
           </tr>
-        } @empty { <tr><td colspan="6" class="muted" data-testid="no-quarantine">No quarantined document.</td></tr> }
+        } @empty { @if (!error()) { <tr><td colspan="6" class="muted" data-testid="no-quarantine">No quarantined document.</td></tr> } }
       </tbody>
     </table></div>
     @if (selected(); as d) {
@@ -74,6 +77,8 @@ export class QuarantinePage implements OnInit {
   protected readonly selected = signal<SecurityDocument | null>(null);
   protected readonly scans = signal<DocumentScan[]>([]);
   protected readonly busy = signal(false);
+  /** A failed read: shown instead of an empty table that would look like "nothing quarantined". */
+  protected readonly error = signal<ApiError | null>(null);
   protected readonly canManage = () => this.auth.has(P.SECURITY_MANAGE);
 
   ngOnInit(): void {
@@ -81,14 +86,15 @@ export class QuarantinePage implements OnInit {
   }
 
   reload(): void {
-    this.api.quarantined().subscribe((d) => this.docs.set(d));
+    this.error.set(null);
+    this.api.quarantined().subscribe({ next: (d) => this.docs.set(d), error: (e: unknown) => this.error.set(ApiError.from(e)) });
     const s = this.selected();
     if (s) this.open(s);
   }
 
   protected open(d: SecurityDocument): void {
     this.selected.set(d);
-    this.api.scans(d.id).subscribe((s) => this.scans.set(s));
+    this.api.scans(d.id).subscribe({ next: (s) => this.scans.set(s), error: (e: unknown) => this.notify.error(e) });
   }
 
   protected rescan(d: SecurityDocument): void {

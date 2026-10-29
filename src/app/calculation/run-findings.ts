@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -13,6 +13,7 @@ import { AuthService } from '../core/auth/auth.service';
 import { P } from '../core/auth/permissions';
 import { NotifyService } from '../core/notify.service';
 import { label } from '../farmer/farmer.models';
+import { READ_ONLY } from '../shared/read-only';
 import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
@@ -54,7 +55,7 @@ import { FINDING_CATEGORIES, Finding, findingBadge } from './preverification.mod
         </details>
       </div>
     } @empty { <p class="muted small">No finding.</p> }
-    @if (canRaise && run().status !== 'DRAFT') {
+    @if (canRaise() && run().status !== 'DRAFT') {
       <h4>Raise a finding</h4>
       <div class="row">
         <mat-form-field subscriptSizing="dynamic"><mat-label>Category</mat-label>
@@ -81,7 +82,9 @@ export class RunFindings implements OnInit {
   private readonly api = inject(PreverificationApi);
   private readonly dialog = inject(MatDialog);
   private readonly notify = inject(NotifyService);
-  protected readonly canRaise = inject(AuthService).has(P.CALCULATION_REVIEW);
+  private readonly readOnly = inject(READ_ONLY);
+  private readonly mayRaise = inject(AuthService).has(P.CALCULATION_REVIEW);
+  protected readonly canRaise = computed(() => this.mayRaise && !this.readOnly());
   protected readonly label = label;
   protected readonly badge = findingBadge;
   protected readonly categories = FINDING_CATEGORIES;
@@ -100,7 +103,7 @@ export class RunFindings implements OnInit {
   }
 
   load(): void {
-    this.api.findings(this.run().project_id, this.run().id).subscribe((f) => this.findings.set(f));
+    this.api.findings(this.run().project_id, this.run().id).subscribe({ next: (f) => this.findings.set(f), error: (e: unknown) => this.notify.error(e) });
   }
 
   protected raise(): void {

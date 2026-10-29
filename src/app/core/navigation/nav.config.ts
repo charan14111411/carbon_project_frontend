@@ -66,16 +66,16 @@ export const NAVIGATION: readonly NavSection[] = [
       { label: 'Orders', icon: 'receipt_long', route: '/orders', anyPermissions: [P.ORDERS_READ, P.ORDERS_PLACE] },
       { label: 'Payments', icon: 'payments', route: '/payments', anyPermissions: [P.PAYMENTS_CONFIRM, P.REFUNDS_REQUEST, P.REFUNDS_APPROVE] },
       { label: 'Buyer profile', icon: 'verified_user', route: '/marketplace/profile', permissions: [P.BUYERS_KYC_SUBMIT] },
-      { label: 'KYC review', icon: 'fact_check', route: '/marketplace/kyc-review', permissions: [P.BUYERS_KYC_VERIFY] },
+      { label: 'KYC review', icon: 'person_search', route: '/marketplace/kyc-review', permissions: [P.BUYERS_KYC_VERIFY] },
     ],
   },
   {
     title: 'Finance',
     items: [
-      { label: 'Revenue & costs', icon: 'account_balance', route: '/finance/revenue',
+      { label: 'Revenue & costs', icon: 'request_quote', route: '/finance/revenue',
         anyPermissions: [P.REVENUE_READ, P.COSTS_MANAGE, P.COSTS_APPROVE] },
       { label: 'Revenue sharing', icon: 'pie_chart', route: '/finance/sharing', anyPermissions: [P.SHARING_MANAGE, P.SHARING_APPROVE] },
-      { label: 'Settlements', icon: 'calculate', route: '/finance/settlements',
+      { label: 'Settlements', icon: 'balance', route: '/finance/settlements',
         anyPermissions: [P.SETTLEMENT_READ, P.SETTLEMENT_CALCULATE, P.SETTLEMENT_APPROVE] },
       { label: 'Payouts', icon: 'savings', route: '/finance/payouts',
         anyPermissions: [P.PAYOUTS_READ, P.PAYOUTS_CALCULATE, P.PAYOUTS_APPROVE, P.PAYOUTS_EXECUTE, P.PAYOUTS_RECONCILE] },
@@ -89,9 +89,10 @@ export const NAVIGATION: readonly NavSection[] = [
     title: 'My farm',
     items: [
       { label: 'My farmer profile', icon: 'badge', route: '/me/farmer', permissions: [P.FARMERS_SELF] },
+      // Same page as "Farms": shown only to a user who does not already see that item (see visibleNavigation).
       { label: 'My farms', icon: 'agriculture', route: '/farms', permissions: [P.FARMERS_SELF] },
       { label: 'My projects', icon: 'handshake', route: '/me/projects', permissions: [P.FARMERS_SELF] },
-      { label: 'My payouts', icon: 'savings', route: '/me/payouts', permissions: [P.FARMERS_SELF] },
+      { label: 'My payouts', icon: 'paid', route: '/me/payouts', permissions: [P.FARMERS_SELF] },
     ],
   },
   {
@@ -114,8 +115,24 @@ export const NAVIGATION: readonly NavSection[] = [
   },
 ];
 
+/** The items the user may open; a route already shown earlier is not repeated (a staff user who is also a farmer sees "Farms" once). */
 export function visibleNavigation(sections: readonly NavSection[], has: (code: string) => boolean): NavSection[] {
+  const shown = new Set<string>();
   return sections
-    .map((s) => ({ ...s, items: s.items.filter((i) => (i.permissions ?? []).every(has) && (!i.anyPermissions?.length || i.anyPermissions.some(has))) }))
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((i) => {
+        const ok = (i.permissions ?? []).every(has) && (!i.anyPermissions?.length || i.anyPermissions.some(has)) && !shown.has(i.route);
+        if (ok) shown.add(i.route);
+        return ok;
+      }),
+    }))
     .filter((s) => s.items.length > 0);
+}
+
+/** First `/admin/...` page the user may open (Administration, then Security, then any other), or null. */
+export function firstAdminRoute(has: (code: string) => boolean): string | null {
+  const order = (s: NavSection) => (s.title === 'Administration' ? 0 : s.title === 'Security' ? 1 : 2);
+  const sections = [...visibleNavigation(NAVIGATION, has)].sort((a, b) => order(a) - order(b));
+  return sections.flatMap((s) => s.items).find((i) => i.route.startsWith('/admin/'))?.route ?? null;
 }

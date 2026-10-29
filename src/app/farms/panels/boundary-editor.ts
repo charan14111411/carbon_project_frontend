@@ -142,7 +142,7 @@ export class BoundaryEditor implements OnInit {
   });
 
   ngOnInit(): void {
-    this.api.boundaries(this.farm().id).subscribe((v) => this.versions.set(v));
+    this.api.boundaries(this.farm().id).subscribe({ next: (v) => this.versions.set(v), error: (e: unknown) => this.notify.error(e) });
   }
 
   add(p: { lat: number; lon: number }): void {

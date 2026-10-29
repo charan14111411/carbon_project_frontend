@@ -4,10 +4,12 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { Observable } from 'rxjs';
 
+import { ApiError } from '../core/api/api.models';
 import { NotifyService } from '../core/notify.service';
 import { label } from '../farmer/farmer.models';
 import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
+import { StateView } from '../shared/state-view';
 import { StatusBadge } from '../shared/status-badge';
 import { blockerTitle } from './calculation.models';
 import { PreverificationApi } from './preverification.api';
@@ -17,11 +19,12 @@ import { Manifest, READINESS_LABEL, ReadinessReview, ReadinessState, readinessBa
 @Component({
   selector: 'app-calc-readiness-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, JsonPipe, MatButtonModule, StatusBadge],
+  imports: [DatePipe, JsonPipe, MatButtonModule, StateView, StatusBadge],
   template: `
     <div class="panel" data-testid="readiness-panel">
       <h3>Verification readiness</h3>
       <p class="note warn" data-testid="readiness-label">{{ readinessLabel }}</p>
+      <app-state-view [error]="error()" (retry)="reload()" />
       @if (state(); as s) {
         <p class="small muted">{{ s.meaning }} The project status stays {{ s.project_status }}.</p>
         @if (s.blockers.length) {
@@ -75,6 +78,7 @@ export class CalcReadinessPanel {
   protected readonly state = signal<ReadinessState | null>(null);
   protected readonly manifest = signal<Manifest | null>(null);
   protected readonly busy = signal(false);
+  protected readonly error = signal<ApiError | null>(null);
 
   constructor() {
     effect(() => {
@@ -86,10 +90,11 @@ export class CalcReadinessPanel {
   }
 
   private load(periodId: string): void {
-    this.api.readiness(this.projectId(), periodId).subscribe((s) => this.state.set(s));
+    this.error.set(null);
+    this.api.readiness(this.projectId(), periodId).subscribe({ next: (s) => this.state.set(s), error: (e: unknown) => this.error.set(ApiError.from(e)) });
   }
 
-  private reload(): void {
+  protected reload(): void {
     const id = this.periodId();
     if (id) this.load(id);
   }
@@ -110,6 +115,6 @@ export class CalcReadinessPanel {
   }
 
   protected showManifest(r: ReadinessReview): void {
-    this.api.manifest(r.id).subscribe((m) => this.manifest.set(m));
+    this.api.manifest(r.id).subscribe({ next: (m) => this.manifest.set(m), error: (e: unknown) => this.notify.error(e) });
   }
 }

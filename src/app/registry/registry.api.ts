@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { ApiService } from '../core/api/api.service';
+import { newKey } from '../core/api/idempotency';
 import { DocumentRef } from '../lab/lab.models';
 import {
   Account, Batch, BatchLineage, Issuance, OrgRef, PeriodRegistry, Registration, RegistryEvent, RegistryProject, Submission, SubmissionDetail,
@@ -26,23 +27,27 @@ export class RegistryApi {
   registrationDoc = (id: string, file: File): Observable<DocumentRef> => this.api.upload(`${this.b}/registrations/${id}/documents`, file, {});
   recordRegistered = (id: string, body: Body): Observable<Registration> => this.api.post(`${this.b}/registrations/${id}/record-registered`, body);
   recordRegistrationRejected = (id: string, body: Body): Observable<Registration> => this.api.post(`${this.b}/registrations/${id}/record-rejected`, body);
-  createSubmission = (projectId: string, body: Body): Observable<Submission> => this.api.post(`${this.b}/projects/${projectId}/submissions`, body);
+  createSubmission = (projectId: string, body: Body, key = newKey()): Observable<Submission> =>
+    this.api.post(`${this.b}/projects/${projectId}/submissions`, body, key);
   submission = (id: string): Observable<SubmissionDetail> => this.api.get(`${this.b}/submissions/${id}`);
   events = (id: string): Observable<RegistryEvent[]> => this.api.get(`${this.b}/submissions/${id}/events`);
   submissionDoc = (id: string, file: File, category: string, checklistItem?: string | null): Observable<DocumentRef> =>
     this.api.upload(`${this.b}/submissions/${id}/documents`, file, checklistItem ? { category, checklist_item: checklistItem } : { category });
-  freeze = (id: string): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/freeze`);
-  submit = (id: string): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/submit`);
-  recordSubmitted = (id: string, body: Body): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/record-submitted`, body);
+  freeze = (id: string, key = newKey()): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/freeze`, {}, key);
+  submit = (id: string, key = newKey()): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/submit`, {}, key);
+  recordSubmitted = (id: string, body: Body, key = newKey()): Observable<Submission> =>
+    this.api.post(`${this.b}/submissions/${id}/record-submitted`, body, key);
   recordQuery = (id: string, body: Body): Observable<RegistryEvent> => this.api.post(`${this.b}/submissions/${id}/record-query`, body);
-  recordResponse = (id: string, body: Body): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/record-response`, body);
+  recordResponse = (id: string, body: Body, key = newKey()): Observable<Submission> =>
+    this.api.post(`${this.b}/submissions/${id}/record-response`, body, key);
   withdraw = (id: string, body: Body): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/withdraw`, body);
   cancel = (id: string, reason: string): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/cancel`, { reason });
   /** `null` (no body) asks an API adapter to query the registry; MANUAL accounts send ReconcileIn (outcome + evidence document). */
   reconcile = (id: string, body: Body | null): Observable<Submission> => this.api.post(`${this.b}/submissions/${id}/reconcile`, body);
-  recordIssuance = (submissionId: string, body: Body): Observable<Issuance> => this.api.post(`${this.b}/submissions/${submissionId}/issuances`, body);
-  confirm = (id: string, note: string): Observable<Issuance> => this.api.post(`${this.b}/issuances/${id}/confirm`, { note });
-  void = (id: string, reason: string): Observable<Issuance> => this.api.post(`${this.b}/issuances/${id}/void`, { reason });
+  recordIssuance = (submissionId: string, body: Body, key = newKey()): Observable<Issuance> =>
+    this.api.post(`${this.b}/submissions/${submissionId}/issuances`, body, key);
+  confirm = (id: string, note: string, key = newKey()): Observable<Issuance> => this.api.post(`${this.b}/issuances/${id}/confirm`, { note }, key);
+  void = (id: string, reason: string, key = newKey()): Observable<Issuance> => this.api.post(`${this.b}/issuances/${id}/void`, { reason }, key);
   cancelIssuance = (id: string, body: Body): Observable<Issuance> => this.api.post(`${this.b}/issuances/${id}/cancel`, body);
 }
 

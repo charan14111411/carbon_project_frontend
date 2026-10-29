@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { CanActivateChildFn, CanActivateFn, Router } from '@angular/router';
 
+import { firstAdminRoute } from '../navigation/nav.config';
 import { AuthService } from './auth.service';
 
 /** Signed-in users only; remembers where the user was going. */
@@ -19,6 +20,12 @@ export const guestGuard: CanActivateFn = () => {
 export const passwordChangedGuard: CanActivateChildFn = () => {
   const auth = inject(AuthService);
   return auth.mustChangePassword() ? inject(Router).createUrlTree(['/change-password']) : true;
+};
+
+/** `/admin` has no page of its own: go to the first administration page the user may open (or "No access"). */
+export const adminIndexGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return inject(Router).parseUrl(firstAdminRoute((c) => auth.has(c)) ?? '/forbidden');
 };
 
 /** Route `data: { permissions: [...] }` — every listed permission is required;

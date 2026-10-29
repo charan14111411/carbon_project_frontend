@@ -13,6 +13,7 @@ import { ApiError } from '../core/api/api.models';
 import { NotifyService } from '../core/notify.service';
 import { label } from '../farmer/farmer.models';
 import { PageHeader } from '../shared/page-header';
+import { READ_ONLY } from '../shared/read-only';
 import { askReason } from '../shared/reason-dialog';
 import { reloadOn } from '../shared/reload-on';
 import { runAction } from '../shared/run-action';
@@ -40,6 +41,8 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DatePipe, JsonPipe, FormsModule, MatButtonModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatTabsModule,
     PageHeader, StateView, StatusBadge, RunFindings, RunReports],
+  // Findings and reports offer no action on a run of a CLOSED project (its history stays readable).
+  providers: [{ provide: READ_ONLY, useFactory: () => inject(CalculationRunPage).closed }],
   template: `
     <app-state-view [loading]="loading()" [error]="error()" (retry)="load()" />
     @if (run(); as r) {
@@ -48,6 +51,8 @@ import {
       <div class="status-row"><app-status-badge [status]="badge(r.status)" [text]="label(r.status)" data-testid="run-status" />
         @if (r.environment === 'DEMO') { <app-status-badge status="DEMO" /> }
         <span class="small muted">engine {{ r.engine_version }} · module {{ r.module_code ? r.module_code + ' ' + r.module_version + ' (' + r.module_readiness + ')' : 'none' }}</span></div>
+      <app-state-view [error]="partError()" (retry)="load()" />
+      @if (closed()) { <p class="note" data-testid="closed-note">The project is closed: this run is shown read-only.</p> }
       <p class="note" data-testid="calc-label">{{ calculatedLabel }}</p>
       @if (r.demo_label) { <p class="note warn" data-testid="demo-label">{{ r.demo_label }}</p> }
       @if (r.blockers.length) {
@@ -182,6 +187,10 @@ export class CalculationRunPage {
   protected readonly comparison = signal<CalcCompare | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal<ApiError | null>(null);
+  /** A failed read of inputs / outputs / QA / lineage / other runs: shown, never left looking like "no data". */
+  protected readonly partError = signal<ApiError | null>(null);
+  /** The run's project is CLOSED (looked up in the calculations project list; the run itself carries no project status). */
+  readonly closed = signal(false);
   protected readonly busy = signal(false);
   protected qaResult: 'PASS' | 'FAIL' = 'PASS';
   protected qaNotes = '';
@@ -200,18 +209,22 @@ export class CalculationRunPage {
 
   load(): void {
     const id = this.id();
+    const failed = (e: unknown) => this.partError.set(ApiError.from(e));
+    this.error.set(null);
+    this.partError.set(null);
     this.api.run(id).subscribe({
       next: (r) => {
         this.run.set(r);
         this.loading.set(false);
-        this.api.runs(r.project_id).subscribe((rs) => this.others.set(rs.filter((x) => x.id !== r.id)));
+        this.api.runs(r.project_id).subscribe({ next: (rs) => this.others.set(rs.filter((x) => x.id !== r.id)), error: failed });
+        this.api.projects().subscribe({ next: (ps) => this.closed.set(ps.find((p) => p.id === r.project_id)?.status === 'CLOSED'), error: failed });
       },
       error: (e: unknown) => { this.error.set(ApiError.from(e)); this.loading.set(false); },
     });
-    this.api.inputs(id).subscribe((x) => this.inputs.set(x));
-    this.api.outputs(id).subscribe((x) => this.outputs.set(x));
-    this.api.qa(id).subscribe((x) => this.qa.set(x));
-    this.api.lineage(id).subscribe((x) => this.lineage.set(x));
+    this.api.inputs(id).subscribe({ next: (x) => this.inputs.set(x), error: failed });
+    this.api.outputs(id).subscribe({ next: (x) => this.outputs.set(x), error: failed });
+    this.api.qa(id).subscribe({ next: (x) => this.qa.set(x), error: failed });
+    this.api.lineage(id).subscribe({ next: (x) => this.lineage.set(x), error: failed });
   }
 
   protected act(obs: Observable<CalcRun>, message: string): void {
@@ -248,7 +261,7 @@ export class CalculationRunPage {
   }
 
   protected compareWith(): void {
-    if (this.otherId) this.api.compare(this.id(), this.otherId).subscribe((c) => this.comparison.set(c));
+    if (this.otherId) this.api.compare(this.id(), this.otherId).subscribe({ next: (c) => this.comparison.set(c), error: (e: unknown) => this.notify.error(e) });
   }
 
   protected changedFields(c: CalcCompare): [string, [string | null, string | null]][] {

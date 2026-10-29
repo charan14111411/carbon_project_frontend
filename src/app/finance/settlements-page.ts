@@ -16,7 +16,8 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { FinanceApi } from './finance.api';
-import { Allocation, FinanceProject, FormKeys, Settlement, ShareVersion, Verify, finBadge, label, money } from './finance.models';
+import { FormKeys } from '../core/api/idempotency';
+import { Allocation, FinanceProject, Settlement, ShareVersion, Verify, finBadge, label, money } from './finance.models';
 import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
 
 /** Settlement runs: a frozen, hashed calculation of farmer entitlements for one project / period / currency from APPROVED configuration.

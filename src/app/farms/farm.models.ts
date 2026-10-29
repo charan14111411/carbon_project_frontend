@@ -302,3 +302,15 @@ export interface FarmFutureAreas {
   combined_geojson: GeoGeometry | null;
   devices: { name: string; lat: number; lon: number; device_type: number | null }[];
 }
+
+/** Same rule as the backend boundary check (gis_service.check_boundary, FARM_DECLARED_AREA_WARNING_PCT = 25). */
+export const AREA_MISMATCH_PCT = 25;
+
+/** How far (%) the measured area is from the declared one when that exceeds AREA_MISMATCH_PCT; otherwise null. */
+export function areaMismatch(measured: string | number | null | undefined, declared: string | number | null | undefined): number | null {
+  const m = Number(measured);
+  const d = Number(declared);
+  if (measured === null || measured === undefined || measured === '' || !(d > 0) || !Number.isFinite(m)) return null;
+  const pct = (Math.abs(m - d) / d) * 100;
+  return pct > AREA_MISMATCH_PCT ? pct : null;
+}

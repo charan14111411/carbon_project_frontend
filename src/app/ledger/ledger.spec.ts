@@ -7,7 +7,8 @@ import { Me } from '../core/auth/auth.models';
 import { AuthService } from '../core/auth/auth.service';
 import { NAVIGATION, visibleNavigation } from '../core/navigation/nav.config';
 import { HoldingsPage } from './holdings-page';
-import { LedgerApi, newKey } from './ledger.api';
+import { newKey } from '../core/api/idempotency';
+import { LedgerApi } from './ledger.api';
 import { LedgerPage } from './ledger-page';
 import { BALANCE_COLUMNS, DEMO_NOTE, Holding, Inventory, InventoryBatch, LEDGER_NOTE, Transfer, ledgerBadge, total } from './ledger.models';
 

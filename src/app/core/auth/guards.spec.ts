@@ -3,10 +3,10 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree, provideRouter } from '@angular/router';
 
-import { NAVIGATION, visibleNavigation } from '../navigation/nav.config';
+import { NAVIGATION, firstAdminRoute, visibleNavigation } from '../navigation/nav.config';
 import { makeMe } from '../../../testing/fixtures';
 import { AuthService } from './auth.service';
-import { authGuard, guestGuard, passwordChangedGuard, permissionGuard } from './guards';
+import { adminIndexGuard, authGuard, guestGuard, passwordChangedGuard, permissionGuard } from './guards';
 
 describe('route guards', () => {
   let auth: AuthService;
@@ -56,5 +56,44 @@ describe('navigation registry', () => {
     expect(support[1].items.map((i) => i.route)).toEqual(['/admin/users', '/admin/organizations']);
     const nobody = visibleNavigation(NAVIGATION, () => false);
     expect(nobody.flatMap((s) => s.items).map((i) => i.route)).toEqual(['/dashboard']);
+  });
+});
+
+describe('navigation and routes (review fixes)', () => {
+  const items = (codes: string[]) => visibleNavigation(NAVIGATION, (c) => codes.includes(c)).flatMap((s) => s.items);
+
+  it('never shows two items for the same page: a staff user who is also a farmer sees "Farms" once', () => {
+    const shown = items(['farms.read', 'farmers.self']);
+    expect(shown.filter((i) => i.route === '/farms').map((i) => i.label)).toEqual(['Farms']);
+    expect(items(['farmers.self']).filter((i) => i.route === '/farms').map((i) => i.label)).toEqual(['My farms']);
+  });
+
+  it('gives every navigation item its own icon', () => {
+    const all = NAVIGATION.flatMap((s) => s.items).filter((i) => i.label !== 'My farms');   // "My farms" stands in for "Farms"
+    expect(new Set(all.map((i) => i.icon)).size).toBe(all.length);
+  });
+
+  it('opens the staff farmer list for farmers.read only; a farmer may still open a farmer record', async () => {
+    const { routes } = await import('../../app.routes');
+    const shell = routes.find((r) => r.path === '')!;
+    const farmers = shell.children!.find((r) => r.path === 'farmers')!;
+    expect(farmers.data).toBeUndefined();
+    expect(farmers.children!.find((r) => r.path === '')!.data).toEqual({ permissions: ['farmers.read'] });
+    expect(farmers.children!.find((r) => r.path === ':id')!.data!['anyPermissions']).toContain('farmers.self');
+  });
+
+  it('/admin goes to the first administration page the user may open', () => {
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] });
+    const auth = TestBed.inject(AuthService);
+    const router = TestBed.inject(Router);
+    const go = () => router.serializeUrl(TestBed.runInInjectionContext(() =>
+      adminIndexGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot)) as UrlTree);
+    auth.me.set(makeMe(['audit.read', 'security.read']));
+    expect(go()).toBe('/admin/audit');
+    auth.me.set(makeMe(['security.read']));
+    expect(go()).toBe('/admin/security');
+    auth.me.set(makeMe(['projects.read']));
+    expect(go()).toBe('/forbidden');
+    expect(firstAdminRoute((c) => c === 'users.read')).toBe('/admin/users');
   });
 });

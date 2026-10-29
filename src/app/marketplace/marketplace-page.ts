@@ -14,7 +14,8 @@ import { PageHeader } from '../shared/page-header';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { MarketplaceApi } from './marketplace.api';
-import { BuyerProfileView, Listing, Listings, marketBadge, money, mlabel, newKey } from './marketplace.models';
+import { newKey } from '../core/api/idempotency';
+import { BuyerProfileView, Listing, Listings, marketBadge, money, mlabel } from './marketplace.models';
 
 interface CartLine { listing: Listing; quantity: number | null }
 

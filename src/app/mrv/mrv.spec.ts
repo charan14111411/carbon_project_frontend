@@ -1,15 +1,20 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 
 import { AuthService } from '../core/auth/auth.service';
 import { NAVIGATION, visibleNavigation } from '../core/navigation/nav.config';
 import { FieldDashboardPage } from './field-dashboard-page';
 import { MrvDashboardPage } from './mrv-dashboard-page';
-import { MrvDatasetPage } from './mrv-dataset-page';
+import { DATASET_DONE, MrvDatasetPage } from './mrv-dataset-page';
+import { PLAN_DONE } from './mrv-plan-detail-page';
+import { MRV_TABS, MrvProjectPage } from './mrv-project-page';
 import { FieldCollection, Measurement, MonitoringRecord, Period, Plan, QaView, SamplingPoint, Stratum, capturableInMrv, collectionMissing, dataRoleLabel, mrvBadge, parseMeasurementValue } from './mrv.models';
 import { MrvEvidencePanel } from './panels/mrv-evidence-panel';
+import { MrvPeriodsPanel } from './panels/mrv-periods-panel';
+import { READ_ONLY } from '../shared/read-only';
+import { signal } from '@angular/core';
 import { MrvRecordsPanel } from './panels/mrv-records-panel';
 import { MrvStrataPanel } from './panels/mrv-strata-panel';
 
@@ -226,5 +231,58 @@ describe('MRV screens', () => {
       if (!approvable) expect(el.textContent).toContain('SP-2026-000004 not collected');
       f.destroy();
     }
+  });
+});
+
+describe('MRV review fixes', () => {
+  it('says "submitted" / "approved" in its toasts (never "submited" / "approveed")', () => {
+    expect(Object.values(DATASET_DONE)).toEqual(['Dataset submitted.', 'Dataset approved.', 'Dataset rejected.']);
+    expect(Object.values(PLAN_DONE)).toEqual(['Plan submitted.', 'Plan approved.', 'Plan returned.', 'Plan withdrawn.']);
+  });
+
+  describe('project page tabs', () => {
+    beforeEach(() => {
+      TestBed.configureTestingModule({ providers: [provideRouter([{ path: 'mrv/projects/:id', children: [] }]), provideHttpClient(),
+        provideHttpClientTesting()] });
+    });
+
+    async function open(url: string, permissions: string[]) {
+      TestBed.inject(AuthService).me.set({ user: { id: 'u1' }, permissions: ['mrv.read', ...permissions] } as never);
+      await TestBed.inject(Router).navigateByUrl(url);
+      const f = TestBed.createComponent(MrvProjectPage);
+      f.componentRef.setInput('id', 'p1');
+      f.detectChanges();
+      await f.whenStable();
+      const tab = (f.componentInstance as unknown as { tab: { index(): number; select(i: number): void } }).tab;
+      return { f, tab };
+    }
+
+    it('maps ?tab= by key, so a hidden Verification tab never shifts Registry', async () => {
+      const { tab } = await open('/mrv/projects/p1?tab=registry', ['registry.read']);
+      expect(tab.index()).toBe(MRV_TABS.length);                // Registry follows the always-shown tabs directly
+    });
+
+    it('selects the first tab for a key the user cannot see', async () => {
+      const { tab } = await open('/mrv/projects/p1?tab=verification', ['registry.read']);
+      expect(tab.index()).toBe(0);
+    });
+
+    it('writes the chosen tab to the URL so refresh and back keep it', async () => {
+      const { f, tab } = await open('/mrv/projects/p1', []);
+      tab.select(MRV_TABS.indexOf('samples'));
+      await f.whenStable();
+      expect(TestBed.inject(Router).url).toBe('/mrv/projects/p1?tab=samples');
+    });
+  });
+
+  it.each([[false, 1], [true, 0]])('periods panel: read-only (CLOSED project) = %s shows %i action button(s)', (readOnly, buttons) => {
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
+      { provide: READ_ONLY, useValue: signal(readOnly) }] });
+    TestBed.inject(AuthService).me.set({ user: { id: 'u1' }, permissions: ['mrv.read', 'mrv.manage'] } as never);
+    const f = TestBed.createComponent(MrvPeriodsPanel);
+    f.componentRef.setInput('projectId', 'p1');
+    f.componentRef.setInput('periods', []);
+    f.detectChanges();
+    expect((f.nativeElement as HTMLElement).querySelectorAll('button').length).toBe(buttons);
   });
 });

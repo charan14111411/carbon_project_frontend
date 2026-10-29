@@ -96,3 +96,16 @@ describe('ReadinessPanel', () => {
     expect((f.nativeElement as HTMLElement).querySelectorAll('li.done').length).toBe(1);
   });
 });
+
+describe('declared vs measured area', () => {
+  it('flags a difference over 25 % (same rule as the backend boundary check) and nothing else', async () => {
+    const { AREA_MISMATCH_PCT, areaMismatch } = await import('./farm.models');
+    expect(AREA_MISMATCH_PCT).toBe(25);
+    expect(areaMismatch('1.30', '1.00')).toBeCloseTo(30);
+    expect(areaMismatch('0.70', '1.00')).toBeCloseTo(30);
+    expect(areaMismatch('1.25', '1.00')).toBeNull();          // exactly 25 % is not "more than"
+    expect(areaMismatch('5', null)).toBeNull();
+    expect(areaMismatch(null, '2')).toBeNull();
+    expect(areaMismatch('5', '0')).toBeNull();
+  });
+});

@@ -13,7 +13,8 @@ import { PageHeader } from '../shared/page-header';
 import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
-import { LedgerApi, newKey } from './ledger.api';
+import { newKey } from '../core/api/idempotency';
+import { LedgerApi } from './ledger.api';
 import { Holding, Holdings, Retirement, ledgerBadge } from './ledger.models';
 
 /** Holder view: the caller organization's own positions only — project, vintage, methodology and registry facts; never farmer, farm, location,

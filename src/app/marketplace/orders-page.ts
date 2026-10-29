@@ -16,7 +16,8 @@ import { askReason } from '../shared/reason-dialog';
 import { runAction } from '../shared/run-action';
 import { StatusBadge } from '../shared/status-badge';
 import { MarketplaceApi } from './marketplace.api';
-import { LineageStep, NOT_INVOICE, Order, OrderItem, Orders, Payment, Refund, marketBadge, money, mlabel, newKey } from './marketplace.models';
+import { newKey } from '../core/api/idempotency';
+import { LineageStep, NOT_INVOICE, Order, OrderItem, Orders, Payment, Refund, marketBadge, money, mlabel } from './marketplace.models';
 
 /** Orders as buyer (pay with evidence, cancel, confirmation, lineage) or as seller (cancel unpaid orders, confirm payments, resolve
  *  orders that need attention, refunds). Ownership changes only when the custodian completes the ledger transfer. */

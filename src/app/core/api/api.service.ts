@@ -31,11 +31,12 @@ export class ApiService {
   }
 
   /** multipart/form-data upload: one file plus simple text fields. */
-  upload<T>(path: string, file: File, fields: Record<string, string>): Observable<T> {
+  upload<T>(path: string, file: File, fields: Record<string, string>, idempotencyKey?: string): Observable<T> {
     const form = new FormData();
     form.append('file', file, file.name);
     for (const [k, v] of Object.entries(fields)) form.append(k, v);
-    return this.http.post<T>(this.url(path), form);
+    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined;
+    return this.http.post<T>(this.url(path), form, { headers });
   }
 
   /** DELETE; `body` carries e.g. the reason for ending a record (the server keeps the record, see projects). */
