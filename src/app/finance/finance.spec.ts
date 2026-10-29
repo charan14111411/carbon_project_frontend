@@ -210,6 +210,15 @@ describe('Finance screens', () => {
     refresh();
     expect(el.querySelector('[data-testid="fail-form"]')).not.toBeNull();      // refused: the form and the reason stay
     expect(page.failReason).toBe('Account closed');
+    // trying again with the same file names the document already attached: no second copy of the evidence is uploaded
+    expect(el.querySelector('[data-testid="fail-evidence-kept"]')).not.toBeNull();
+    submit().click();
+    http.expectNone((r) => r.url === '/api/v1/payouts/po2/documents');
+    const retry = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/payouts/po2/fail');
+    expect(retry.request.body).toEqual({ reason: 'Account closed', document_id: 'd2' });
+    retry.flush(payout({ id: 'po2', status: 'FAILED' }));
+    http.expectOne((r) => r.url === '/api/v1/payouts').flush([]);
+    http.expectOne('/api/v1/payouts/adjustments').flush([]);
   });
 
   it('My payouts lists only the farmer\'s own payouts or the unlinked note', async () => {

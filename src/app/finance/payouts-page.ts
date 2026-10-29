@@ -70,6 +70,10 @@ import { FIN_STYLES } from './project-picker';
         </p>
         <div class="row"><mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Reason</mat-label><input matInput [(ngModel)]="failReason" data-testid="fail-reason" /></mat-form-field>
           <input type="file" accept="application/pdf" (change)="pick($event)" data-testid="fail-file" /></div>
+        @if (failEvidenceFor(p)) {
+          <p class="small muted" data-testid="fail-evidence-kept">{{ file?.name }} is already attached to this payout (evidence is never
+            deleted); trying again names the same document instead of attaching another copy.</p>
+        }
         <button mat-flat-button type="button" color="warn" [disabled]="busy() || !failReason.trim() || !file"
           (click)="recordFail(p)" data-testid="fail-submit">Record FAILED</button>
         <button mat-button type="button" (click)="failing.set(null)">Close</button>
@@ -122,6 +126,8 @@ export class PayoutsPage implements OnInit {
   protected readonly reconciling = signal<Payout | null>(null);
   protected readonly failing = signal<Payout | null>(null);
   protected failReason = '';
+  /** Evidence uploaded for a FAILED attempt the server refused: evidence is append-only, so a retry with the same file reuses it. */
+  private failEvidence: { payoutId: string; file: File; documentId: string } | undefined;
   protected readonly busy = signal(false);
   protected file: File | undefined;
   protected paid = { ref: '' };
@@ -167,16 +173,30 @@ export class PayoutsPage implements OnInit {
    *  The form stays open until the server accepts, so a refused request keeps the typed reason. */
   protected recordFail(p: Payout): void {
     const reason = this.failReason.trim();
-    if (!reason || !this.file || this.busy()) return;
+    const file = this.file;
+    if (!reason || !file || this.busy()) return;
+    const fail = (documentId: string) => runAction(this.api.payoutAction(p.id, 'fail', { reason, document_id: documentId }, newKey()),
+      this.busy, this.notify, 'Recorded as FAILED.', () => { this.failEvidence = undefined; this.failing.set(null); this.reload(); });
+    const kept = this.failEvidenceFor(p);
+    if (kept) {
+      fail(kept);
+      return;
+    }
     this.busy.set(true);
-    this.api.payoutDocument(p.id, this.file, 'PAYOUT_EVIDENCE').subscribe({
+    this.api.payoutDocument(p.id, file, 'PAYOUT_EVIDENCE').subscribe({
       next: (d) => {
         this.busy.set(false);
-        runAction(this.api.payoutAction(p.id, 'fail', { reason, document_id: d.document_id }, newKey()), this.busy, this.notify,
-          'Recorded as FAILED.', () => { this.failing.set(null); this.reload(); });
+        this.failEvidence = { payoutId: p.id, file, documentId: d.document_id };
+        fail(d.document_id);
       },
       error: (e: unknown) => { this.busy.set(false); this.notify.error(e); },
     });
+  }
+
+  /** The document already uploaded for this payout from the file now chosen, if a FAILED attempt with it was refused. */
+  protected failEvidenceFor(p: Payout): string | undefined {
+    const e = this.failEvidence;
+    return e && e.payoutId === p.id && e.file === this.file ? e.documentId : undefined;
   }
 
   protected openPaid(p: Payout): void {
