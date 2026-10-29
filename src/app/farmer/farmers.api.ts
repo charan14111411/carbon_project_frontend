@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 
 import { Page, PageQuery } from '../core/api/api.models';
 import { ApiService } from '../core/api/api.service';
-import { Farmer, FarmerInput, FarmerStatus, FarmerSummary } from './farmer.models';
+import { Farmer, FarmerInput, FarmerStatus, FarmerSummary, LinkCandidate } from './farmer.models';
 
 export interface FarmerQuery extends PageQuery {
   search?: string | null;
@@ -52,4 +52,5 @@ export class FarmersApi {
   uploadDocument = (id: string, file: File, category: string, title: string): Observable<{ id: string }> =>
     this.api.upload(`${this.base}/${id}/documents`, file, { category, title });
   linkUser = (id: string, userId: string): Observable<Farmer> => this.api.post(`${this.base}/${id}/link-user`, { user_id: userId });
+  linkCandidates = (id: string): Observable<LinkCandidate[]> => this.api.get(`${this.base}/${id}/link-candidates`);
 }

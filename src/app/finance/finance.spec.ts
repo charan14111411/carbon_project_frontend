@@ -161,7 +161,7 @@ describe('Finance screens', () => {
     expect(text).toContain('460.00 INR');
   });
 
-  it('an UNCONFIRMED payout can only be marked FAILED with bank evidence; a reason alone sends no document', async () => {
+  it('an executed payout (UNCONFIRMED or PAYMENT_PENDING) is marked FAILED only with bank evidence; a refusal keeps the form', async () => {
     signIn(['payouts.read', 'payouts.execute']);
     const f = TestBed.createComponent(PayoutsPage);
     f.detectChanges();
@@ -178,7 +178,7 @@ describe('Finance screens', () => {
     open(0);
     page.failReason = 'Bank says it bounced';
     refresh();
-    expect(el.querySelector('[data-testid="fail-form"]')?.textContent).toContain('attach a bank statement');
+    expect(el.querySelector('[data-testid="fail-form"]')?.textContent).toContain("bank's statement");
     expect(submit().disabled).toBe(true);
     // with evidence: the PDF is uploaded first, then FAILED names it
     page.file = new File(['%PDF-1.4'], 'bank.pdf', { type: 'application/pdf' });
@@ -191,16 +191,25 @@ describe('Finance screens', () => {
     failed.flush(payout({ status: 'FAILED' }));
     http.expectOne((r) => r.url === '/api/v1/payouts').flush([]);
     http.expectOne('/api/v1/payouts/adjustments').flush([]);
-    // PAYMENT_PENDING (manual): a reason alone is allowed and no document id is sent
+    refresh();
+    expect(el.querySelector('[data-testid="fail-form"]')).toBeNull();          // closed after success
+    // PAYMENT_PENDING (a MANUAL transfer was executed): evidence is required too
     f.componentInstance['payouts'].set([payout({ id: 'po2', payout_code: 'PYT-2', status: 'PAYMENT_PENDING' })]);
     f.detectChanges();
     open(0);
     page.failReason = 'Account closed';
     refresh();
+    expect(submit().disabled).toBe(true);
+    page.file = new File(['%PDF-1.4'], 'return.pdf', { type: 'application/pdf' });
+    refresh();
     submit().click();
+    http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/payouts/po2/documents').flush({ document_id: 'd2' });
     const manual = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/payouts/po2/fail');
-    expect(manual.request.body).toEqual({ reason: 'Account closed' });
-    manual.flush(payout({ id: 'po2', status: 'FAILED' }));
+    expect(manual.request.body).toEqual({ reason: 'Account closed', document_id: 'd2' });
+    manual.flush({ error_code: 'PAYOUT_FAILURE_EVIDENCE_REQUIRED', message: 'no' }, { status: 409, statusText: 'Conflict' });
+    refresh();
+    expect(el.querySelector('[data-testid="fail-form"]')).not.toBeNull();      // refused: the form and the reason stay
+    expect(page.failReason).toBe('Account closed');
   });
 
   it('My payouts lists only the farmer\'s own payouts or the unlinked note', async () => {

@@ -34,7 +34,11 @@ function order(over: Partial<Order> = {}): Order {
 
 describe('Marketplace helpers and navigation', () => {
   it('formats decimal money strings without float arithmetic and maps badges', () => {
-    expect(money('1250.0000', 'INR')).toBe('1250.00 INR');
+    expect(money('1250.0000', 'INR')).toBe('1,250.00 INR');
+    expect(money('99000.0000', 'INR')).toBe('99,000.00 INR');
+    expect(money('1234567.5', 'INR')).toBe('12,34,567.50 INR');            // Indian lakh grouping
+    expect(money('1234567.5', 'USD')).toBe('1,234,567.50 USD');
+    expect(money('-100000.00', 'INR')).toBe('-1,00,000.00 INR');
     expect(money('12.5000', 'INR')).toBe('12.50 INR');
     expect(money('100.0000', 'JPY')).toBe('100 JPY');
     expect(money('0.1250', 'BHD')).toBe('0.125 BHD');
@@ -115,7 +119,7 @@ describe('Marketplace screens', () => {
     await f.whenStable();
     f.detectChanges();
     const el = f.nativeElement as HTMLElement;
-    expect(el.querySelector('[data-testid="pay-form"]')?.textContent).toContain('1250.00 INR');
+    expect(el.querySelector('[data-testid="pay-form"]')?.textContent).toContain('1,250.00 INR');
     expect([...el.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Confirm receipt');
     expect(el.textContent).toContain('not a tax invoice');
   });

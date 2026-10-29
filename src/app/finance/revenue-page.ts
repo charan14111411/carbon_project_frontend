@@ -72,7 +72,7 @@ import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
           <mat-form-field subscriptSizing="dynamic"><mat-label>Incurred on</mat-label><input matInput type="date" [(ngModel)]="c.incurred_on" /></mat-form-field>
           <mat-form-field subscriptSizing="dynamic"><mat-label>Period (optional)</mat-label>
             <mat-select [(ngModel)]="c.period"><mat-option value="">Any period</mat-option>@for (m of project()!.periods; track m.id) {
-              <mat-option [value]="m.id">Period {{ m.period_number }}</mat-option> }</mat-select></mat-form-field>
+              <mat-option [value]="m.id">Period {{ m.period_number }} · {{ m.name }}</mat-option> }</mat-select></mat-form-field>
         </div>
         @if (isCorrection()) {
           <!-- a negative amount corrects an approved cost of this project (server: corrects_cost_id, CORRECTION_TARGET_REQUIRED) -->

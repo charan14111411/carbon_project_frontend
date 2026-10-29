@@ -199,14 +199,26 @@ export function fitsMinorUnits(amount: string, currency: string, signed = false)
   return frac.length <= 4 && frac.replace(/0+$/, '').length <= currencyDecimals(currency);
 }
 
+/** Group the digits of a whole-number string: Indian lakh / crore grouping for INR (1,00,000), thousands elsewhere (100,000). */
+function groupDigits(digits: string, currency: string): string {
+  if (digits.length <= 3) return digits;
+  const last3 = digits.slice(-3);
+  const head = digits.slice(0, -3);
+  const size = currency.trim().toUpperCase() === 'INR' ? 2 : 3;
+  const groups: string[] = [];
+  for (let end = head.length; end > 0; end -= size) groups.unshift(head.slice(Math.max(0, end - size), end));
+  return `${groups.join(',')},${last3}`;
+}
+
 /** Display a decimal money string with its currency (no float arithmetic — the server computes every amount). */
 export function money(amount: string | null | undefined, currency: string): string {
   if (amount === null || amount === undefined) return '—';
   const [whole, frac = ''] = amount.split('.');
+  const sign = whole.startsWith('-') ? '-' : '';
   const trimmed = frac.replace(/0+$/, '');
   const minor = currencyDecimals(currency);           // 2 for INR, 0 for JPY / KRW, 3 for BHD / KWD / OMR / JOD
   const decimals = trimmed.length < minor ? trimmed.padEnd(minor, '0') : trimmed;
-  return `${whole}${decimals ? '.' + decimals : ''} ${currency}`;
+  return `${sign}${groupDigits(whole.replace(/^[-+]/, ''), currency)}${decimals ? '.' + decimals : ''} ${currency}`;
 }
 
 export function newKey(): string {

@@ -43,7 +43,7 @@ const ALL = 'all';
       <form class="phone" (ngSubmit)="find()">
         <mat-form-field subscriptSizing="dynamic" class="grow"><mat-label>FarmFuture mobile number</mat-label>
           <input matInput type="tel" [formControl]="phone" autocomplete="off" placeholder="+91 98765 43210" data-testid="ff-phone" />
-          <mat-hint>Leave empty to use {{ data.farmerName }}'s phone number on file.</mat-hint>
+          <mat-hint>Leave empty to use {{ data.farmerName }}'s primary phone. Another number must first be added to the farmer's contacts.</mat-hint>
         </mat-form-field>
         <button mat-flat-button type="submit" [disabled]="busy()" data-testid="ff-find"><mat-icon>search</mat-icon> Find farms</button>
       </form>

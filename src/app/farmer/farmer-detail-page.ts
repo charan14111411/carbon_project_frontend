@@ -21,6 +21,7 @@ import { FarmerBankPanel } from './panels/farmer-bank-panel';
 import { FarmerConsentsPanel } from './panels/farmer-consents-panel';
 import { FarmerFarmsPanel } from './panels/farmer-farms-panel';
 import { FarmerKycPanel } from './panels/farmer-kyc-panel';
+import { FarmerLoginPanel } from './panels/farmer-login-panel';
 import { FarmerProfilePanel } from './panels/farmer-profile-panel';
 
 const ACTION: Record<string, string> = { REGISTERED: 'Register', ACTIVE: 'Activate', SUSPENDED: 'Suspend' };
@@ -29,7 +30,7 @@ const ACTION: Record<string, string> = { REGISTERED: 'Register', ACTIVE: 'Activa
   selector: 'app-farmer-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatTabsModule, MatCardModule, MatButtonModule, MatIconModule, PageHeader, StateView, StatusBadge, ReadinessPanel, DocumentsPanel,
-    FarmerProfilePanel, FarmerKycPanel, FarmerConsentsPanel, FarmerAgreementsPanel, FarmerBankPanel, FarmerFarmsPanel],
+    FarmerProfilePanel, FarmerKycPanel, FarmerConsentsPanel, FarmerAgreementsPanel, FarmerBankPanel, FarmerFarmsPanel, FarmerLoginPanel],
   template: `
     <app-state-view [loading]="loading()" [error]="error()" (retry)="load()" />
     @if (farmer(); as f) {
@@ -73,6 +74,11 @@ const ACTION: Record<string, string> = { REGISTERED: 'Register', ACTIVE: 'Activa
             </div>
           </ng-template>
         </mat-tab>
+        @if (f.can_manage && !f.is_self) {
+          <mat-tab label="Login">
+            <ng-template matTabContent><app-farmer-login-panel [farmer]="f" (changed)="set($event)" /></ng-template>
+          </mat-tab>
+        }
         <mat-tab [label]="'Farms (' + f.farm_count + ')'">
           <ng-template matTabContent><app-farmer-farms-panel [farmer]="f" /></ng-template>
         </mat-tab>

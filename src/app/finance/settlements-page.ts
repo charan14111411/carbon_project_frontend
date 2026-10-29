@@ -34,7 +34,7 @@ import { FIN_STYLES, FinanceProjectPicker } from './project-picker';
       <section class="box" data-testid="run-form"><h3>New settlement run</h3>
         <div class="row">
           <mat-form-field subscriptSizing="dynamic"><mat-label>Monitoring period</mat-label>
-            <mat-select [(ngModel)]="f.period">@for (m of p.periods; track m.id) { <mat-option [value]="m.id">Period {{ m.period_number }}</mat-option> }</mat-select></mat-form-field>
+            <mat-select [(ngModel)]="f.period">@for (m of p.periods; track m.id) { <mat-option [value]="m.id">Period {{ m.period_number }} · {{ m.name }}</mat-option> }</mat-select></mat-form-field>
           <mat-form-field subscriptSizing="dynamic"><mat-label>Currency</mat-label><input matInput maxlength="3" [(ngModel)]="f.currency" /></mat-form-field>
           <mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Approved revenue-share version</mat-label>
             <mat-select [(ngModel)]="f.share">@for (v of approvedShares(); track v.id) {

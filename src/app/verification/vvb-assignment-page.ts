@@ -110,13 +110,13 @@ import {
                   <mat-form-field subscriptSizing="dynamic"><mat-label>Outcome</mat-label>
                     <mat-select [(ngModel)]="outcome"><mat-option value="VERIFIED">Verified</mat-option><mat-option value="NOT_VERIFIED">Not verified</mat-option></mat-select></mat-form-field>
                   @if (outcome === 'VERIFIED') {
-                    <mat-form-field subscriptSizing="dynamic"><mat-label>{{ quantityLabel }} (optional)</mat-label><input matInput [(ngModel)]="quantity" /></mat-form-field>
+                    <mat-form-field subscriptSizing="dynamic"><mat-label>{{ quantityLabel }}</mat-label><input matInput inputmode="decimal" [(ngModel)]="quantity" data-testid="vvb-quantity" /></mat-form-field>
                     <mat-form-field subscriptSizing="dynamic"><mat-label>Unit</mat-label><input matInput [(ngModel)]="unit" /></mat-form-field>
                   }
                 </div>
                 <mat-form-field class="full" subscriptSizing="dynamic"><mat-label>Rationale</mat-label><textarea matInput rows="3" [(ngModel)]="rationale"></textarea></mat-form-field>
                 <div class="row"><label class="small">Verification report (PDF, required) <input type="file" accept="application/pdf" (change)="pick($event)" /></label>
-                  <button mat-flat-button type="button" [disabled]="busy() || !file || rationale.trim().length < 3 || (quantity.trim() !== '' && unit.trim() === '')"
+                  <button mat-flat-button type="button" [disabled]="busy() || !file || rationale.trim().length < 3 || !quantityOk()" data-testid="vvb-decide"
                           (click)="decide(p)">Record decision</button></div>
               </div>
             }
@@ -149,6 +149,12 @@ export class VvbAssignmentPage {
   protected readonly busy = signal(false);
   protected coi = '';
   protected outcome: 'VERIFIED' | 'NOT_VERIFIED' = 'VERIFIED';
+  /** VERIFIED states what was verified: a positive quantity and its unit (the server refuses VERIFIED_QUANTITY_REQUIRED otherwise). */
+  protected quantityOk(): boolean {
+    if (this.outcome !== 'VERIFIED') return true;
+    const q = Number(this.quantity.trim());
+    return this.quantity.trim() !== '' && Number.isFinite(q) && q > 0 && this.unit.trim() !== '';
+  }
   protected quantity = '';
   protected unit = '';
   protected rationale = '';

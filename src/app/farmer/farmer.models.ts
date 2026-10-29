@@ -187,3 +187,11 @@ export function label(code: string | null | undefined): string {
   const words = (code ?? '').split('_').filter(Boolean);
   return words.map((w, i) => ACRONYMS.has(w) ? w : i === 0 ? w.charAt(0) + w.slice(1).toLowerCase() : w.toLowerCase()).join(' ');
 }
+
+/** A Farmer-role login that can be linked for self-service (GET /farmers/{id}/link-candidates). */
+export interface LinkCandidate {
+  user_id: string;
+  email: string;
+  full_name: string;
+  linked: boolean;
+}

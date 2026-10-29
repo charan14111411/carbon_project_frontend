@@ -65,13 +65,12 @@ import { FIN_STYLES } from './project-picker';
     @if (failing(); as p) {
       <section class="box" data-testid="fail-form"><h3>Record that {{ p.payout_code }} failed</h3>
         <p class="small muted">
-          @if (p.status === 'UNCONFIRMED') { The bank or provider has not confirmed the outcome, so attach a bank statement or letter (PDF)
-            showing the money did not leave. Without it a reissue could pay the farmer twice. }
-          @else { Attach bank evidence if you have it (required when the payment is pending at a provider). }
+          The payment was executed, so the money may already have left the bank. Attach the bank's statement or return advice (PDF)
+          showing it did not arrive. Without it a reissue could pay the farmer twice.
         </p>
         <div class="row"><mat-form-field subscriptSizing="dynamic" class="wide"><mat-label>Reason</mat-label><input matInput [(ngModel)]="failReason" data-testid="fail-reason" /></mat-form-field>
           <input type="file" accept="application/pdf" (change)="pick($event)" data-testid="fail-file" /></div>
-        <button mat-flat-button type="button" color="warn" [disabled]="busy() || !failReason.trim() || (p.status === 'UNCONFIRMED' && !file)"
+        <button mat-flat-button type="button" color="warn" [disabled]="busy() || !failReason.trim() || !file"
           (click)="recordFail(p)" data-testid="fail-submit">Record FAILED</button>
         <button mat-button type="button" (click)="failing.set(null)">Close</button>
       </section>
@@ -164,18 +163,18 @@ export class PayoutsPage implements OnInit {
     this.failing.set(p);
   }
 
-  /** UNCONFIRMED (or pending at a provider) needs bank evidence before FAILED: a reissue must never pay twice. */
+  /** An executed payout (PAYMENT_PENDING or UNCONFIRMED) is FAILED only with the bank's evidence: a reissue must never pay twice.
+   *  The form stays open until the server accepts, so a refused request keeps the typed reason. */
   protected recordFail(p: Payout): void {
     const reason = this.failReason.trim();
-    if (!reason || this.busy()) return;
-    const done = (documentId?: string) => {
-      this.failing.set(null);
-      this.run(this.api.payoutAction(p.id, 'fail', documentId ? { reason, document_id: documentId } : { reason }, newKey()), 'Recorded as FAILED.');
-    };
-    if (!this.file) { done(); return; }
+    if (!reason || !this.file || this.busy()) return;
     this.busy.set(true);
     this.api.payoutDocument(p.id, this.file, 'PAYOUT_EVIDENCE').subscribe({
-      next: (d) => { this.busy.set(false); done(d.document_id); },
+      next: (d) => {
+        this.busy.set(false);
+        runAction(this.api.payoutAction(p.id, 'fail', { reason, document_id: d.document_id }, newKey()), this.busy, this.notify,
+          'Recorded as FAILED.', () => { this.failing.set(null); this.reload(); });
+      },
       error: (e: unknown) => { this.busy.set(false); this.notify.error(e); },
     });
   }

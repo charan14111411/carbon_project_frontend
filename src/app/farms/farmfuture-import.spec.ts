@@ -55,7 +55,7 @@ describe('FarmFutureImportDialog', () => {
   it('uses the farmer phone on file, lists estates and farms, and returns the merged area by default', async () => {
     const f = await render();
     const el = f.nativeElement as HTMLElement;
-    expect(el.textContent).toContain("Leave empty to use Asha Patil's phone number on file.");
+    expect(el.textContent).toContain("Leave empty to use Asha Patil's primary phone. Another number must first be added to the farmer's contacts.");
     el.querySelector<HTMLButtonElement>('[data-testid="ff-find"]')!.click();
     const req = http.expectOne(ESTATES_URL);
     expect(req.request.method).toBe('POST');
